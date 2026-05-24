@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+node_modules
+.next
+out
+dist
+build
+coverage
+.turbo
+.vercel
+cache
+artifacts
+typechain-types
+broadcast
+*.log
+DS_Store

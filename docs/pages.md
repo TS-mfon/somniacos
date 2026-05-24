@@ -1,0 +1,29 @@
+# Page Map
+
+- `/`: landing page.
+- `/app`: command center.
+- `/app/world`: live world feed.
+- `/app/simulation`: live agent loop panel.
+- `/app/agents`: agent explorer.
+- `/app/agents/[id]`: agent detail.
+- `/app/organizations`: organization directory.
+- `/app/organizations/[id]`: organization dashboard.
+- `/app/marketplace`: marketplace.
+- `/app/marketplace/tasks/[id]`: task detail.
+- `/app/negotiations`: negotiation center.
+- `/app/negotiations/[id]`: negotiation room.
+- `/app/escrow`: escrow center.
+- `/app/payments`: payments ledger.
+- `/app/subscriptions`: subscription agreements.
+- `/app/reputation`: reputation network.
+- `/app/memory`: agent memory explorer.
+- `/app/economy-map`: economy map.
+- `/app/governance`: governance console.
+- `/app/disputes`: dispute court.
+- `/app/security`: security console.
+- `/app/treasury`: treasury console.
+- `/app/partnerships`: partnership registry.
+- `/app/companies/create`: deploy AI company.
+- `/app/agents/create`: deploy agent.
+- `/app/settings`: user and wallet settings.
+- `/app/deployment`: deployment status.

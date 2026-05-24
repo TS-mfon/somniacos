@@ -1,0 +1,7 @@
+{
+  "buildCommand": "pnpm --filter @somniacos/web build",
+  "devCommand": "pnpm --filter @somniacos/web dev",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "outputDirectory": "apps/web/.next"
+}

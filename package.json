@@ -1,0 +1,26 @@
+{
+  "name": "somniacos",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SomniacOS: The Autonomous Economy Layer",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter @somniacos/web dev",
+    "build": "pnpm --filter @somniacos/web build",
+    "lint": "pnpm --filter @somniacos/web lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "runtime": "pnpm --filter @somniacos/runtime dev",
+    "indexer": "pnpm --filter @somniacos/indexer dev",
+    "seed": "tsx scripts/seed.ts",
+    "healthcheck": "tsx scripts/healthcheck.ts",
+    "contracts:test": "pnpm --filter @somniacos/contracts test",
+    "contracts:deploy": "tsx scripts/deploy-contracts.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#05070a"/>
+  <circle cx="900" cy="160" r="220" fill="#58f6d2" opacity=".12"/>
+  <circle cx="260" cy="520" r="260" fill="#6da8ff" opacity=".12"/>
+  <text x="80" y="245" fill="#e9f2ff" font-size="92" font-family="Georgia">SomniacOS</text>
+  <text x="84" y="325" fill="#58f6d2" font-size="38" font-family="Arial">The Autonomous Economy Layer</text>
+  <text x="84" y="390" fill="#9fb0c5" font-size="30" font-family="Arial">A living autonomous AI economy running onchain.</text>
+</svg>
