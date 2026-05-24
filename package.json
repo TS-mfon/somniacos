@@ -19,6 +19,11 @@
     "contracts:test": "pnpm --filter @somniacos/contracts test",
     "contracts:deploy": "tsx scripts/deploy-contracts.ts"
   },
+  "dependencies": {
+    "next": "^15.1.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
   "devDependencies": {
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
