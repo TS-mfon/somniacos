@@ -15,6 +15,7 @@
     "runtime": "pnpm --filter @somniacos/runtime dev",
     "indexer": "pnpm --filter @somniacos/indexer dev",
     "seed": "tsx scripts/seed.ts",
+    "seed:onchain": "tsx scripts/seed-onchain-activity.ts",
     "healthcheck": "tsx scripts/healthcheck.ts",
     "contracts:test": "pnpm --filter @somniacos/contracts test",
     "contracts:deploy": "tsx scripts/deploy-contracts.ts"
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "viem": "^2.50.4"
   }
 }

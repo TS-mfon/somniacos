@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Activity, Bot, Building2, Command, Shield, WalletCards } from "lucide-react";
 import { featurePages, worldEvents } from "@somniacos/shared";
+import { WalletButton } from "./wallet-button";
 
 const navGroups = [
   ["World", [["Command", "/app"], ["World Feed", "/app/world"], ["Simulation", "/app/simulation"], ["Economy Map", "/app/economy-map"]]],
@@ -12,8 +13,12 @@ const navGroups = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-obsidian bg-radial-grid text-mercury">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-white/10 bg-black/35 p-5 backdrop-blur-2xl xl:block">
+    <div className="min-h-screen overflow-hidden bg-obsidian bg-radial-grid text-mercury">
+      <div className="pointer-events-none fixed inset-0 opacity-80">
+        <div className="absolute left-1/4 top-[-8rem] h-80 w-80 rounded-full bg-signal/10 blur-[110px]" />
+        <div className="absolute bottom-[-10rem] right-1/4 h-96 w-96 rounded-full bg-cobalt/10 blur-[120px]" />
+      </div>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-white/10 bg-black/45 p-5 backdrop-blur-2xl xl:block">
         <Link href="/" className="mb-8 flex items-center gap-3">
           <span className="grid h-11 w-11 place-items-center rounded-2xl border border-signal/40 bg-signal/10 shadow-glow">
             <Command className="h-5 w-5 text-signal" />
@@ -29,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <p className="mb-2 text-[10px] uppercase tracking-[0.32em] text-white/36">{group}</p>
               <div className="space-y-1">
                 {links.map(([label, href]) => (
-                  <Link key={href} href={href} className="block rounded-xl px-3 py-2 text-sm text-white/68 transition hover:bg-white/8 hover:text-white">
+                  <Link key={href} href={href} className="block rounded-xl px-3 py-2 text-sm text-white/68 transition hover:bg-white/8 hover:text-white hover:shadow-glow">
                     {label}
                   </Link>
                 ))}
@@ -61,6 +66,7 @@ function TopBar() {
           <Badge icon={<Activity className="h-3.5 w-3.5" />} label="Runtime live" tone="signal" />
           <Badge icon={<Shield className="h-3.5 w-3.5" />} label="Security watching" tone="cobalt" />
           <Badge icon={<WalletCards className="h-3.5 w-3.5" />} label="Somnia ready" tone="ember" />
+          <WalletButton />
         </div>
       </div>
     </header>
@@ -77,10 +83,10 @@ export function PageHero({ title, eyebrow, children }: { title: string; eyebrow:
     <section className="mb-8 grid gap-5 lg:grid-cols-[1fr_360px] lg:items-end">
       <div>
         <p className="mb-3 text-xs uppercase tracking-[0.42em] text-signal">{eyebrow}</p>
-        <h1 className="max-w-5xl font-display text-5xl leading-[0.95] tracking-tight text-white md:text-7xl">{title}</h1>
+        <h1 className="max-w-5xl bg-gradient-to-br from-white via-white to-signal/70 bg-clip-text font-display text-5xl leading-[0.95] tracking-tight text-transparent md:text-7xl">{title}</h1>
         <p className="mt-5 max-w-3xl text-lg leading-8 text-white/62">{children}</p>
       </div>
-      <div className="panel rounded-3xl p-5">
+      <div className="hero-panel rounded-3xl p-5">
         <p className="text-xs uppercase tracking-[0.32em] text-white/36">Live Economy</p>
         <div className="mt-4 grid grid-cols-2 gap-3">
           <Metric icon={<Bot />} label="Agents" value="1,284" />
@@ -107,7 +113,7 @@ export function FeatureGrid() {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {featurePages.map(([title, href, description]) => (
-        <Link key={href} href={href} className="panel group rounded-3xl p-5 transition hover:-translate-y-1 hover:border-signal/35">
+        <Link key={href} href={href} className="lux-card group rounded-3xl p-5 transition hover:-translate-y-1 hover:border-signal/35">
           <div className="mb-6 h-1 w-full rounded-full bg-white/10">
             <div className="h-1 w-1/2 rounded-full bg-gradient-to-r from-signal to-cobalt transition group-hover:w-full" />
           </div>

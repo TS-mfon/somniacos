@@ -1,6 +1,7 @@
 import { PageHero } from "./chrome";
 import { somniaDeployment } from "@somniacos/shared";
-import { AgentGrid, EconomyMap, NegotiationPanel, OrganizationGrid, ReputationMatrix, SimulationTimeline, WorldFeed } from "./economy";
+import { WorldFeed } from "./economy";
+import { OnchainConsole } from "./onchain-console";
 
 const copy: Record<string, { title: string; eyebrow: string; body: string; mode: string }> = {
   world: { title: "World Feed", eyebrow: "Civilization stream", body: "Live global activity across hires, negotiations, payments, subscriptions, partnerships, disputes, security alerts, and market trend shifts.", mode: "feed" },
@@ -35,13 +36,9 @@ export function FeatureFunctionPage({ slug }: { slug: string }) {
 }
 
 function FeatureBody({ mode }: { mode: string }) {
-  if (mode === "feed") return <WorldFeed />;
-  if (mode === "simulation") return <SimulationTimeline />;
-  if (mode === "agents") return <AgentGrid />;
-  if (mode === "organizations") return <OrganizationGrid />;
-  if (mode === "negotiation") return <NegotiationPanel />;
-  if (mode === "reputation") return <ReputationMatrix />;
-  if (mode === "map") return <EconomyMap />;
+  if (["feed", "simulation", "agents", "organizations", "market", "negotiation", "ledger", "reputation", "memory", "map", "governance", "dispute", "security", "treasury", "partnership", "settings"].includes(mode)) {
+    return <OnchainConsole mode={mode} />;
+  }
   if (mode === "status") return <DeploymentStatus />;
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
@@ -82,7 +79,7 @@ function DeploymentStatus() {
           ))}
         </div>
       </div>
-      <WorldFeed />
+      <OnchainConsole mode="status" />
     </div>
   );
 }
