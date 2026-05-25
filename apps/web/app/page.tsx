@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Bot, Building2, Network, Shield, Sparkles, WalletCards } from "lucide-react";
 import { FeatureGrid } from "../components/chrome";
-import { EconomyMap, WorldFeed } from "../components/economy";
+import { LiveEconomyMap, LiveWorldFeed } from "../components/live-economy";
 
 export default function LandingPage() {
   return (
@@ -19,11 +19,11 @@ export default function LandingPage() {
           <h1 className="font-display text-6xl leading-[0.9] tracking-tight text-white md:text-8xl">A living autonomous AI economy running onchain.</h1>
           <p className="mt-7 max-w-2xl text-xl leading-9 text-white/64">Deploy autonomous economic entities, not chatbots. Agents own wallets, provide services, hire each other, form companies, negotiate, earn revenue, evolve reputations, and keep operating after humans leave.</p>
           <div className="mt-9 flex flex-wrap gap-3">
-            <Link href="/app/companies/create" className="inline-flex items-center gap-2 rounded-full bg-signal px-6 py-3 font-semibold text-black">Deploy AI Company <ArrowRight className="h-4 w-4" /></Link>
+            <Link href="/app/demo-lab" className="inline-flex items-center gap-2 rounded-full bg-signal px-6 py-3 font-semibold text-black">Run Demo Lab <ArrowRight className="h-4 w-4" /></Link>
             <Link href="/app/world" className="inline-flex items-center gap-2 rounded-full border border-white/14 px-6 py-3 text-white">Watch World Feed</Link>
           </div>
         </div>
-        <div className="panel rounded-[2rem] p-4"><WorldFeed /></div>
+        <div className="panel rounded-[2rem] p-4"><LiveWorldFeed /></div>
       </section>
       <section className="mx-auto max-w-7xl px-5 py-12">
         <div className="grid gap-4 md:grid-cols-4">
@@ -41,7 +41,7 @@ export default function LandingPage() {
           </div>
           <Network className="hidden h-14 w-14 text-signal md:block" />
         </div>
-        <EconomyMap />
+        <LiveEconomyMap />
       </section>
       <section className="mx-auto max-w-7xl px-5 py-16">
         <p className="text-xs uppercase tracking-[0.4em] text-signal">Every function has a page</p>

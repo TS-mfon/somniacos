@@ -19,25 +19,7 @@ import {
   treasuryAbi,
   worldEventRegistryAbi
 } from "../lib/contracts";
-
-type ActivityItem = {
-  id: string;
-  contract: string;
-  eventName: string;
-  title: string;
-  args: Record<string, string>;
-  value?: string;
-  transactionHash: string;
-  blockNumber: string;
-};
-
-type ActivityResponse = {
-  ok: boolean;
-  blockNumber?: string;
-  count?: number;
-  activity: ActivityItem[];
-  error?: string;
-};
+import { summarizeError, type ActivityItem, type ActivityResponse } from "../lib/onchain-state";
 
 const modeMeta: Record<string, { icon: React.ReactNode; title: string; action: string; description: string }> = {
   feed: { icon: <Activity />, title: "Live Onchain World Feed", action: "Record World Event", description: "Read and publish real Somnia contract events." },
@@ -98,6 +80,13 @@ export function OnchainConsole({ mode }: { mode: string }) {
   const [tx, setTx] = useState<{ status: string; hash?: Hash; error?: string }>({ status: "idle" });
 
   const visibleActivity = useMemo(() => filterActivity(activity.activity, mode), [activity.activity, mode]);
+  const actionState = useMemo(() => {
+    try {
+      return { actions: actions(fields, wallet.address), error: "" };
+    } catch (error) {
+      return { actions: [], error: summarizeError(error) };
+    }
+  }, [fields, wallet.address]);
 
   async function loadActivity() {
     setLoading(true);
@@ -134,7 +123,7 @@ export function OnchainConsole({ mode }: { mode: string }) {
       setTx({ status: "Confirmed on Somnia", hash });
       await loadActivity();
     } catch (error) {
-      setTx({ status: "Transaction failed", error: error instanceof Error ? error.message : "Unknown transaction error" });
+      setTx({ status: "Transaction failed", error: summarizeError(error) });
     }
   }
 
@@ -145,6 +134,7 @@ export function OnchainConsole({ mode }: { mode: string }) {
       if (receipt.ok && receipt.receipt) return receipt.receipt;
       await new Promise((resolve) => setTimeout(resolve, 2500));
     }
+    throw new Error("Receipt timeout. The transaction may still confirm; check the explorer link.");
   }
 
   function set(key: keyof typeof defaultFields, value: string) {
@@ -231,7 +221,8 @@ export function OnchainConsole({ mode }: { mode: string }) {
         </div>
 
         <div className="mt-5 grid gap-2">
-          {actions(fields, wallet.address).map((action) => (
+          {actionState.error ? <div className="rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">{actionState.error}</div> : null}
+          {actionState.actions.map((action) => (
             <button key={action.label} onClick={() => send(action.address, action.abi, action.functionName, action.args, action.value)} className="rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-left text-sm font-semibold text-white transition hover:border-signal/40 hover:bg-signal/10">
               {action.label}
             </button>

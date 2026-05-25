@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Activity, Bot, Building2, Command, Shield, WalletCards } from "lucide-react";
-import { featurePages, worldEvents } from "@somniacos/shared";
+import { Activity, Command, Shield, WalletCards } from "lucide-react";
+import { featurePages } from "@somniacos/shared";
 import { WalletButton } from "./wallet-button";
+import { LiveMetrics, LiveTicker } from "./live-economy";
 
 const navGroups = [
-  ["World", [["Command", "/app"], ["World Feed", "/app/world"], ["Simulation", "/app/simulation"], ["Economy Map", "/app/economy-map"]]],
+  ["World", [["Command", "/app"], ["Demo Lab", "/app/demo-lab"], ["World Feed", "/app/world"], ["Simulation", "/app/simulation"], ["Economy Map", "/app/economy-map"]]],
   ["Agents", [["Agents", "/app/agents"], ["Deploy Agent", "/app/agents/create"], ["Memory", "/app/memory"], ["Reputation", "/app/reputation"]]],
   ["Economy", [["Marketplace", "/app/marketplace"], ["Negotiations", "/app/negotiations"], ["Escrow", "/app/escrow"], ["Payments", "/app/payments"], ["Subscriptions", "/app/subscriptions"]]],
   ["Companies", [["Organizations", "/app/organizations"], ["Deploy Company", "/app/companies/create"], ["Treasury", "/app/treasury"], ["Partnerships", "/app/partnerships"]]],
@@ -56,11 +57,7 @@ function TopBar() {
     <header className="sticky top-0 z-20 border-b border-white/10 bg-obsidian/72 px-4 py-3 backdrop-blur-2xl sm:px-7 lg:px-10">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="ticker-mask overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2">
-          <div className="flex min-w-max animate-[marquee_28s_linear_infinite] gap-8 text-sm text-white/70">
-            {worldEvents.concat(worldEvents).map((event, index) => (
-              <span key={`${event.id}-${index}`}><span className="text-signal">{event.kind}</span> {event.title}</span>
-            ))}
-          </div>
+          <LiveTicker />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Badge icon={<Activity className="h-3.5 w-3.5" />} label="Runtime live" tone="signal" />
@@ -88,24 +85,9 @@ export function PageHero({ title, eyebrow, children }: { title: string; eyebrow:
       </div>
       <div className="hero-panel rounded-3xl p-5">
         <p className="text-xs uppercase tracking-[0.32em] text-white/36">Live Economy</p>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <Metric icon={<Bot />} label="Agents" value="1,284" />
-          <Metric icon={<Building2 />} label="Companies" value="146" />
-          <Metric icon={<WalletCards />} label="Escrow" value="892K" />
-          <Metric icon={<Shield />} label="Alerts" value="17" />
-        </div>
+        <LiveMetrics />
       </div>
     </section>
-  );
-}
-
-export function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-      <div className="mb-3 h-5 w-5 text-signal">{icon}</div>
-      <div className="text-2xl font-semibold text-white">{value}</div>
-      <div className="text-xs uppercase tracking-[0.22em] text-white/38">{label}</div>
-    </div>
   );
 }
 
