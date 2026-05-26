@@ -52,16 +52,26 @@ Contracts:
 - Transaction console capable of submitting real wallet-signed writes to all deployed contracts.
 - Seed script `scripts/seed-onchain-activity.ts` created real Somnia activity across agents, orgs, marketplace, negotiations, escrow, reputation, subscriptions, treasury, governance, partnerships, and world events.
 
-## Current Pass Plan
+## Completed Follow-Up Pass
 
-1. Add this `AGENT.MD` handoff.
-2. Replace remaining static/shared economy UI with contract-derived state from `/api/onchain/activity`.
-3. Improve wallet and transaction error handling for no wallet, wrong network, rejected signatures, invalid form input, insufficient funds, RPC failures, and receipt timeouts.
-4. Add a real guided demo lab where a visitor with funded STT can run the scenario as wallet-signed contract transactions.
-5. Improve the visual system so the app feels modern, agentic, attractive, unique, and production-grade.
-6. Run typecheck/build.
-7. Deploy the finished site to Vercel.
-8. Retry VPS SSH once and document result.
+Commit `d0cd997` completed the first real-interaction pass:
+
+- Added this `AGENT.MD` handoff.
+- Replaced remaining static/shared economy UI with contract-derived state from `/api/onchain/activity`.
+- Improved wallet and transaction error handling for no wallet, wrong network, rejected signatures, invalid form input, insufficient funds, RPC failures, and receipt timeouts.
+- Added a real guided demo lab where a visitor with funded STT can run the scenario as wallet-signed contract transactions.
+- Improved the visual system and deployed to Vercel production.
+
+Current follow-up pass adds:
+
+- `GuidedOnboarding`: plain-language wallet, Somnia network, STT, and first-agent-task guidance for zero-knowledge visitors.
+- `AgentWorkbench`: deterministic local agent task execution that works without external AI provider keys.
+- `runLocalAgentTask`: local agent engine that produces structured deliverables, risk notes, recommended onchain action, and metadata URI.
+- `/app/agent-workbench`: page for users to select a real onchain agent, ask it to perform a task, and optionally anchor the output to `WorldEventRegistry`.
+- Feature help cards on each dApp section so users understand what to do next.
+- Feature-scoped transaction action filtering so users do not see unrelated contract buttons on every page.
+
+Important: agent task outputs are local deterministic outputs until a user anchors them onchain with a wallet-signed transaction. This preserves the no-fake-state rule.
 
 ## VPS Status
 
@@ -92,5 +102,6 @@ Manual browser checks:
 - Landing page loads and shows real onchain event activity.
 - `/app` command center loads without static fake counts.
 - `/app/demo-lab` guides a funded wallet through real transaction steps.
+- `/app/agent-workbench` lets a user pick a real onchain agent, generate task output, and anchor it onchain.
 - `/app/agents`, `/app/organizations`, `/app/marketplace`, `/app/escrow`, `/app/governance`, `/app/world` show real event-derived state.
 - Wallet connect, network switch, transaction submit, receipt confirmation, explorer links, and error states work.

@@ -94,6 +94,7 @@ export const reputationDimensions = ["Reliability", "Output Quality", "Speed", "
 
 export const featurePages = [
   ["Demo Lab", "/app/demo-lab", "Run the full autonomous economy scenario as real visitor-signed Somnia transactions."],
+  ["Agent Workbench", "/app/agent-workbench", "Ask a live onchain agent to perform a task and optionally anchor the output to Somnia."],
   ["World Feed", "/app/world", "Live civilization activity across negotiations, payments, hires, disputes, partnerships, subscriptions, and market signals."],
   ["Simulation", "/app/simulation", "Observe active autonomous loops: observe, think, plan, negotiate, execute, reflect, learn, broadcast."],
   ["Agents", "/app/agents", "Explore economic entities with wallets, goals, memory, skills, reputation, and relationships."],

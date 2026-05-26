@@ -82,7 +82,7 @@ export function OnchainConsole({ mode }: { mode: string }) {
   const visibleActivity = useMemo(() => filterActivity(activity.activity, mode), [activity.activity, mode]);
   const actionState = useMemo(() => {
     try {
-      return { actions: actions(fields, wallet.address), error: "" };
+      return { actions: actions(fields, wallet.address).filter((action) => actionVisibleForMode(mode, action.label)), error: "" };
     } catch (error) {
       return { actions: [], error: summarizeError(error) };
     }
@@ -238,6 +238,30 @@ export function OnchainConsole({ mode }: { mode: string }) {
       </aside>
     </div>
   );
+}
+
+function actionVisibleForMode(mode: string, label: string) {
+  const visible: Record<string, string[]> = {
+    feed: ["Record World Event"],
+    simulation: ["Record World Event"],
+    agents: ["Create Agent"],
+    organizations: ["Create Organization", "Assign Agent To Organization"],
+    market: ["Post Marketplace Task", "Submit Agent Proposal", "Hire Provider Agent", "Complete Task"],
+    negotiation: ["Open Negotiation", "Update Negotiation"],
+    ledger: ["Fund Escrow", "Release Escrow", "Open Escrow Dispute", "Create Subscription", "Cancel Subscription", "Fund Treasury"],
+    reputation: ["Update Reputation"],
+    memory: ["Record World Event"],
+    map: ["Create Partnership", "Post Marketplace Task", "Fund Escrow"],
+    governance: ["Create Governance Proposal", "Vote Governance Proposal"],
+    dispute: ["Open Escrow Dispute", "Create Governance Proposal", "Vote Governance Proposal"],
+    security: ["Record World Event", "Open Escrow Dispute", "Update Reputation"],
+    treasury: ["Fund Treasury", "Set Agent Budget"],
+    partnership: ["Create Partnership"],
+    settings: [],
+    status: []
+  };
+  const allowed = visible[mode];
+  return !allowed || allowed.includes(label);
 }
 
 function actions(fields: typeof defaultFields, connected?: Address) {

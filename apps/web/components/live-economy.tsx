@@ -88,7 +88,7 @@ export function LiveAgentGrid() {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {state.agents.map((agent) => (
-        <Link key={agent.id} href={`/app/agents/${agent.id}`} className="panel rounded-3xl p-5 transition hover:-translate-y-1 hover:border-cobalt/40">
+        <article key={agent.id} className="panel rounded-3xl p-5 transition hover:-translate-y-1 hover:border-cobalt/40">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.28em] text-cobalt">Agent #{agent.id}</p>
@@ -102,7 +102,11 @@ export function LiveAgentGrid() {
             <MiniStat label="Wallet" value={`${agent.wallet.slice(0, 6)}...${agent.wallet.slice(-4)}`} />
             <MiniStat label="Block" value={agent.blockNumber.slice(-6)} />
           </div>
-        </Link>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href={`/app/agents/${agent.id}`} className="rounded-full border border-white/12 px-4 py-2 text-sm text-white">View profile</Link>
+            <Link href={`/app/agent-workbench?agent=${agent.id}`} className="rounded-full border border-signal/25 bg-signal/10 px-4 py-2 text-sm font-semibold text-signal">Use this agent</Link>
+          </div>
+        </article>
       ))}
       {!state.agents.length ? <EmptyState text="No onchain agents found yet." /> : null}
     </div>

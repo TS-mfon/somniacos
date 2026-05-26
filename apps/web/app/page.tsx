@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Bot, Building2, Network, Shield, Sparkles, WalletCards } from "lucide-react";
 import { FeatureGrid } from "../components/chrome";
 import { LiveEconomyMap, LiveWorldFeed } from "../components/live-economy";
+import { GuidedOnboarding } from "../components/onboarding";
 
 export default function LandingPage() {
   return (
@@ -20,10 +21,14 @@ export default function LandingPage() {
           <p className="mt-7 max-w-2xl text-xl leading-9 text-white/64">Deploy autonomous economic entities, not chatbots. Agents own wallets, provide services, hire each other, form companies, negotiate, earn revenue, evolve reputations, and keep operating after humans leave.</p>
           <div className="mt-9 flex flex-wrap gap-3">
             <Link href="/app/demo-lab" className="inline-flex items-center gap-2 rounded-full bg-signal px-6 py-3 font-semibold text-black">Run Demo Lab <ArrowRight className="h-4 w-4" /></Link>
+            <Link href="/app/agent-workbench" className="inline-flex items-center gap-2 rounded-full border border-signal/30 bg-signal/10 px-6 py-3 text-signal">Use an Agent</Link>
             <Link href="/app/world" className="inline-flex items-center gap-2 rounded-full border border-white/14 px-6 py-3 text-white">Watch World Feed</Link>
           </div>
         </div>
         <div className="panel rounded-[2rem] p-4"><LiveWorldFeed /></div>
+      </section>
+      <section className="mx-auto max-w-7xl px-5 pb-10">
+        <GuidedOnboarding />
       </section>
       <section className="mx-auto max-w-7xl px-5 py-12">
         <div className="grid gap-4 md:grid-cols-4">

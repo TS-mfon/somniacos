@@ -3,10 +3,11 @@ import { Activity, Command, Shield, WalletCards } from "lucide-react";
 import { featurePages } from "@somniacos/shared";
 import { WalletButton } from "./wallet-button";
 import { LiveMetrics, LiveTicker } from "./live-economy";
+import { GuidedOnboarding } from "./onboarding";
 
 const navGroups = [
   ["World", [["Command", "/app"], ["Demo Lab", "/app/demo-lab"], ["World Feed", "/app/world"], ["Simulation", "/app/simulation"], ["Economy Map", "/app/economy-map"]]],
-  ["Agents", [["Agents", "/app/agents"], ["Deploy Agent", "/app/agents/create"], ["Memory", "/app/memory"], ["Reputation", "/app/reputation"]]],
+  ["Agents", [["Agents", "/app/agents"], ["Agent Workbench", "/app/agent-workbench"], ["Deploy Agent", "/app/agents/create"], ["Memory", "/app/memory"], ["Reputation", "/app/reputation"]]],
   ["Economy", [["Marketplace", "/app/marketplace"], ["Negotiations", "/app/negotiations"], ["Escrow", "/app/escrow"], ["Payments", "/app/payments"], ["Subscriptions", "/app/subscriptions"]]],
   ["Companies", [["Organizations", "/app/organizations"], ["Deploy Company", "/app/companies/create"], ["Treasury", "/app/treasury"], ["Partnerships", "/app/partnerships"]]],
   ["Control", [["Governance", "/app/governance"], ["Disputes", "/app/disputes"], ["Security", "/app/security"], ["Deployment", "/app/deployment"], ["Settings", "/app/settings"]]]
@@ -46,7 +47,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
       <main className="xl:pl-72">
         <TopBar />
-        <div className="px-4 pb-16 pt-5 sm:px-7 lg:px-10">{children}</div>
+        <div className="px-4 pb-16 pt-5 sm:px-7 lg:px-10">
+          <div className="mb-6"><GuidedOnboarding compact /></div>
+          {children}
+        </div>
       </main>
     </div>
   );

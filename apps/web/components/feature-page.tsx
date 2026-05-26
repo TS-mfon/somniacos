@@ -2,6 +2,7 @@ import { PageHero } from "./chrome";
 import { somniaDeployment } from "@somniacos/shared";
 import { WorldFeed } from "./economy";
 import { OnchainConsole } from "./onchain-console";
+import { GuidedOnboarding } from "./onboarding";
 
 const copy: Record<string, { title: string; eyebrow: string; body: string; mode: string }> = {
   world: { title: "World Feed", eyebrow: "Civilization stream", body: "Live global activity across hires, negotiations, payments, subscriptions, partnerships, disputes, security alerts, and market trend shifts.", mode: "feed" },
@@ -36,8 +37,21 @@ export function FeatureFunctionPage({ slug }: { slug: string }) {
 }
 
 function FeatureBody({ mode }: { mode: string }) {
+  if (mode === "settings") {
+    return (
+      <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
+        <GuidedOnboarding />
+        <OnchainConsole mode={mode} />
+      </div>
+    );
+  }
   if (["feed", "simulation", "agents", "organizations", "market", "negotiation", "ledger", "reputation", "memory", "map", "governance", "dispute", "security", "treasury", "partnership", "settings"].includes(mode)) {
-    return <OnchainConsole mode={mode} />;
+    return (
+      <div className="space-y-6">
+        <FeatureHelp mode={mode} />
+        <OnchainConsole mode={mode} />
+      </div>
+    );
   }
   if (mode === "status") return <DeploymentStatus />;
   return (
@@ -52,6 +66,37 @@ function FeatureBody({ mode }: { mode: string }) {
         </div>
       </div>
       <WorldFeed />
+    </div>
+  );
+}
+
+function FeatureHelp({ mode }: { mode: string }) {
+  const guides: Record<string, string[]> = {
+    feed: ["Watch real contract events", "Record a world event when you want to publish activity", "Open the explorer link for proof"],
+    simulation: ["Use Demo Lab for guided scenario steps", "Record runtime ticks as world events", "Refresh to see confirmed events"],
+    agents: ["Create or select an agent", "Open Agent Workbench to make it perform a task", "Anchor useful output onchain"],
+    organizations: ["Create an AI company", "Create agents", "Assign agents to roles"],
+    market: ["Post a task", "Generate agent work in the workbench", "Submit proposal, hire, then complete"],
+    negotiation: ["Create marketplace task first", "Open negotiation with buyer/seller agent IDs", "Update terms after agreement"],
+    ledger: ["Use small STT amounts", "Fund escrow after terms are clear", "Release only after delivery"],
+    reputation: ["Run or review a task", "Score the agent", "Use reason metadata that explains the outcome"],
+    memory: ["Generate an agent output", "Record the memory as a world event", "Use metadata URI as the memory pointer"],
+    map: ["Create partnerships", "Post marketplace tasks", "Fund escrow to create economic edges"],
+    governance: ["Create a proposal", "Vote with an agent ID", "Execute after yes votes exceed no votes"],
+    dispute: ["Collect evidence metadata", "Open escrow dispute", "Use governance for resolution if needed"],
+    security: ["Generate a security task", "Record alert as world event", "Update reputation or open dispute"],
+    treasury: ["Fund organization treasury", "Set agent budget", "Record budget rationale"],
+    partnership: ["Pick two agent IDs", "Write terms URI", "Create partnership"]
+  };
+  const steps = guides[mode] ?? ["Connect wallet", "Choose action", "Confirm transaction"];
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {steps.map((step, index) => (
+        <div key={step} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+          <p className="text-xs uppercase tracking-[0.24em] text-signal">Step {index + 1}</p>
+          <p className="mt-2 text-sm leading-6 text-white/66">{step}</p>
+        </div>
+      ))}
     </div>
   );
 }
