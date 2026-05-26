@@ -319,3 +319,241 @@ contract WorldEventRegistry {
         emit WorldEventRecorded(eventId, kind, metadataURI);
     }
 }
+
+interface ISomniaAgentPlatform {
+    function createRequest(uint256 agentId, address callbackAddress, bytes4 callbackSelector, bytes calldata payload) external payable returns (uint256 requestId);
+    function getRequestDeposit() external view returns (uint256);
+}
+
+interface ILLMInferenceAgent {
+    function inferString(string calldata prompt, string calldata system, bool chainOfThought, string[] calldata allowedValues) external returns (string memory response);
+    function inferChat(string[] calldata roles, string[] calldata messages, bool chainOfThought) external returns (string memory response);
+}
+
+interface IWebsiteParserAgent {
+    function ExtractString(
+        string calldata key,
+        string calldata description,
+        string[] calldata options,
+        string calldata prompt,
+        string calldata url,
+        bool resolveUrl,
+        uint8 numPages,
+        uint8 confidenceThreshold
+    ) external returns (string memory output);
+}
+
+contract SomniacAgentRouter {
+    enum RunStatus { None, Pending, Success, Failed, TimedOut }
+    enum RunMode { LLM, Website }
+    enum ResponseStatus { Success, Failed, TimedOut }
+    enum ConsensusType { Majority, Threshold }
+
+    struct Response {
+        address validator;
+        bytes result;
+        ResponseStatus status;
+        uint256 receipt;
+        uint256 timestamp;
+        uint256 executionCost;
+    }
+
+    struct Request {
+        uint256 id;
+        address requester;
+        address callbackAddress;
+        bytes4 callbackSelector;
+        address[] subcommittee;
+        Response[] responses;
+        uint256 responseCount;
+        uint256 failureCount;
+        uint256 threshold;
+        uint256 createdAt;
+        uint256 deadline;
+        ResponseStatus status;
+        ConsensusType consensusType;
+        uint256 remainingBudget;
+    }
+
+    struct AgentRun {
+        address user;
+        string appAgentId;
+        string task;
+        string constraints;
+        string url;
+        uint256 somniaAgentId;
+        RunMode mode;
+        RunStatus status;
+        string result;
+        uint256 createdAt;
+        uint256 completedAt;
+    }
+
+    ISomniaAgentPlatform public immutable platform;
+    uint256 public immutable llmAgentId;
+    uint256 public immutable websiteAgentId;
+    uint256 public immutable subcommitteeSize;
+    uint256 public immutable llmPricePerAgent;
+    uint256 public immutable websitePricePerAgent;
+
+    mapping(uint256 => AgentRun) private runs;
+    mapping(uint256 => bool) public pendingRequests;
+    uint256[] public requestIds;
+
+    event AgentRunRequested(
+        uint256 indexed requestId,
+        address indexed user,
+        string appAgentId,
+        uint256 indexed somniaAgentId,
+        RunMode mode,
+        string task,
+        string url,
+        uint256 deposit
+    );
+    event AgentRunCompleted(uint256 indexed requestId, address indexed user, string appAgentId, RunStatus status, string result);
+
+    constructor(
+        address platform_,
+        uint256 llmAgentId_,
+        uint256 websiteAgentId_,
+        uint256 subcommitteeSize_,
+        uint256 llmPricePerAgent_,
+        uint256 websitePricePerAgent_
+    ) {
+        require(platform_ != address(0), "platform required");
+        require(subcommitteeSize_ > 0, "subcommittee required");
+        platform = ISomniaAgentPlatform(platform_);
+        llmAgentId = llmAgentId_;
+        websiteAgentId = websiteAgentId_;
+        subcommitteeSize = subcommitteeSize_;
+        llmPricePerAgent = llmPricePerAgent_;
+        websitePricePerAgent = websitePricePerAgent_;
+    }
+
+    function getRequiredDeposit(RunMode mode) public view returns (uint256) {
+        uint256 price = mode == RunMode.Website ? websitePricePerAgent : llmPricePerAgent;
+        return platform.getRequestDeposit() + price * subcommitteeSize;
+    }
+
+    function getRequestCount() external view returns (uint256) {
+        return requestIds.length;
+    }
+
+    function getRun(uint256 requestId) external view returns (
+        address user,
+        string memory appAgentId,
+        string memory task,
+        string memory constraints,
+        string memory url,
+        uint256 somniaAgentId,
+        RunMode mode,
+        RunStatus status,
+        string memory result,
+        uint256 createdAt,
+        uint256 completedAt
+    ) {
+        AgentRun storage run = runs[requestId];
+        return (run.user, run.appAgentId, run.task, run.constraints, run.url, run.somniaAgentId, run.mode, run.status, run.result, run.createdAt, run.completedAt);
+    }
+
+    function requestAgentRun(
+        string calldata appAgentId,
+        string calldata task,
+        string calldata constraints,
+        string[] calldata urls
+    ) external payable returns (uint256 requestId) {
+        require(bytes(appAgentId).length > 0, "agent required");
+        require(bytes(task).length > 0, "task required");
+        require(bytes(task).length <= 2800, "task too large");
+        require(bytes(constraints).length <= 1600, "constraints too large");
+        require(urls.length <= 3, "too many urls");
+
+        RunMode mode = urls.length > 0 && bytes(urls[0]).length > 0 ? RunMode.Website : RunMode.LLM;
+        uint256 deposit = getRequiredDeposit(mode);
+        require(msg.value >= deposit, "underfunded");
+
+        uint256 somniaAgentId = mode == RunMode.Website ? websiteAgentId : llmAgentId;
+        bytes memory payload = mode == RunMode.Website
+            ? _websitePayload(appAgentId, task, constraints, urls[0])
+            : _llmPayload(appAgentId, task, constraints);
+
+        string memory sourceUrl = mode == RunMode.Website ? urls[0] : "";
+        requestId = platform.createRequest{value: deposit}(somniaAgentId, address(this), this.handleResponse.selector, payload);
+        pendingRequests[requestId] = true;
+        requestIds.push(requestId);
+
+        AgentRun storage run = runs[requestId];
+        run.user = msg.sender;
+        run.appAgentId = appAgentId;
+        run.task = task;
+        run.constraints = constraints;
+        run.url = sourceUrl;
+        run.somniaAgentId = somniaAgentId;
+        run.mode = mode;
+        run.status = RunStatus.Pending;
+        run.createdAt = block.timestamp;
+
+        emit AgentRunRequested(requestId, msg.sender, appAgentId, somniaAgentId, mode, task, sourceUrl, deposit);
+
+        if (msg.value > deposit) {
+            (bool ok,) = payable(msg.sender).call{value: msg.value - deposit}("");
+            require(ok, "refund failed");
+        }
+    }
+
+    function handleResponse(
+        uint256 requestId,
+        Response[] memory responses,
+        ResponseStatus status,
+        Request memory
+    ) external {
+        require(msg.sender == address(platform), "only platform");
+        require(pendingRequests[requestId], "unknown request");
+        delete pendingRequests[requestId];
+
+        AgentRun storage run = runs[requestId];
+        run.completedAt = block.timestamp;
+
+        if (responses.length > 0 && responses[0].result.length > 0) {
+            run.status = RunStatus.Success;
+            run.result = abi.decode(responses[0].result, (string));
+        } else if (status == ResponseStatus.TimedOut) {
+            run.status = RunStatus.TimedOut;
+            run.result = "Somnia Agent request timed out before validators reached a result.";
+        } else {
+            run.status = RunStatus.Failed;
+            run.result = "Somnia Agent request failed before producing a usable result.";
+        }
+
+        emit AgentRunCompleted(requestId, run.user, run.appAgentId, run.status, run.result);
+    }
+
+    function _llmPayload(string calldata appAgentId, string calldata task, string calldata constraints) private pure returns (bytes memory) {
+        string[] memory allowedValues = new string[](0);
+        string memory system = string.concat(
+            "You are SomniacOS specialist agent ",
+            appAgentId,
+            ". Produce a direct, useful final answer for the visitor. No markdown tables. No placeholder text. If writing social content, make it publish-ready."
+        );
+        string memory prompt = string.concat("Task: ", task, "\nConstraints: ", constraints);
+
+        return abi.encodeWithSelector(ILLMInferenceAgent.inferString.selector, prompt, system, false, allowedValues);
+    }
+
+    function _websitePayload(string calldata appAgentId, string calldata task, string calldata constraints, string calldata url) private pure returns (bytes memory) {
+        string[] memory options = new string[](0);
+        return abi.encodeWithSelector(
+            IWebsiteParserAgent.ExtractString.selector,
+            "somniacos_result",
+            string.concat("Extract and synthesize the useful answer for SomniacOS agent ", appAgentId, "."),
+            options,
+            string.concat("Task: ", task, "\nConstraints: ", constraints, "\nReturn the final visitor-facing answer."),
+            url,
+            false,
+            uint8(3),
+            uint8(60)
+        );
+    }
+
+    receive() external payable {}
+}

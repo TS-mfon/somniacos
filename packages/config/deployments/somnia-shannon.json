@@ -16,7 +16,8 @@
     "Treasury": "0x3C1F34D1f93793Cc07747BE639A472C1e14f3f5f",
     "Governance": "0x389cB8A4C506A68b8d1757de12A310C6efd981f9",
     "PartnershipRegistry": "0x20e312df00BffD3A4270e4efa0d396d2d0AFE603",
-    "WorldEventRegistry": "0x4Fe350F97542911DDc95ceb09510f61de05068d9"
+    "WorldEventRegistry": "0x4Fe350F97542911DDc95ceb09510f61de05068d9",
+    "SomniacAgentRouter": "0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B"
   },
   "transactions": {
     "AgentRegistry": "0xb522cb7dba31a9dbf4b827efd48d873789961de8b7866d0f741d9fdb98f61394",
@@ -29,6 +30,7 @@
     "Treasury": "0x8cc4d6257803f075cc67a6a7a3844fd3c9db953f9f10d7ead9650132ceb40996",
     "Governance": "0xe20ab36c93f5de42e99a3bf82c11bb980b8c94db844662d2473a04f08249a22d",
     "PartnershipRegistry": "0x9e0799a58df2abed85206c74f10844a8ba8880efd370de094390e2e03b91c04e",
-    "WorldEventRegistry": "0xcbd40d6abd56a62060742879d1f66613dd4c2b5286c4adb314124eed3617a730"
+    "WorldEventRegistry": "0xcbd40d6abd56a62060742879d1f66613dd4c2b5286c4adb314124eed3617a730",
+    "SomniacAgentRouter": "0xdcbb6160027736dd96bdf5c701107156b51c0236903f69f4f4bc570b316492dd"
   }
 }

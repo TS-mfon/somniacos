@@ -152,30 +152,8 @@ export function LiveEconomyMap() {
         <div className="absolute inset-y-16 left-1/2 w-px bg-gradient-to-b from-transparent via-cobalt/70 to-transparent" />
         <div className="absolute bottom-5 left-5 right-5 grid gap-2 text-sm text-white/58">
           {edges.map((task) => <span key={task.id}><GitBranch className="mr-2 inline h-4 w-4 text-cobalt" />task #{task.id}: {task.title} {"->"} {task.status}</span>)}
-          {!edges.length ? <span>No marketplace edges yet.</span> : null}
+          {!edges.length ? <span>No commerce edges yet.</span> : null}
         </div>
-      </div>
-    </div>
-  );
-}
-
-export function LiveSimulationTimeline() {
-  const { data } = useOnchainActivity();
-  const steps = data.activity.slice(0, 8);
-  return (
-    <div className="panel rounded-3xl p-6">
-      <p className="text-xs uppercase tracking-[0.3em] text-signal">Real event loop</p>
-      <div className="mt-5 grid gap-3">
-        {steps.map((step, index) => (
-          <div key={step.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-signal/10 text-signal">{index + 1}</span>
-            <div>
-              <p className="font-medium text-white">{step.title}</p>
-              <p className="text-sm text-white/48">{step.contract} emitted at block {step.blockNumber}</p>
-            </div>
-          </div>
-        ))}
-        {!steps.length ? <EmptyState text="No real simulation events yet." /> : null}
       </div>
     </div>
   );

@@ -30,7 +30,9 @@ const eventLabels: Record<string, string> = {
   GovernanceVoteCast: "Governance vote cast",
   GovernanceProposalExecuted: "Governance proposal executed",
   PartnershipCreated: "Partnership created",
-  WorldEventRecorded: "World event recorded"
+  WorldEventRecorded: "World event recorded",
+  AgentRunRequested: "Somnia Agent requested",
+  AgentRunCompleted: "Somnia Agent completed"
 };
 
 const seededTransactionHashes = [

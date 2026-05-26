@@ -33,6 +33,7 @@ Contracts:
 - Governance: `0x389cB8A4C506A68b8d1757de12A310C6efd981f9`
 - PartnershipRegistry: `0x20e312df00BffD3A4270e4efa0d396d2d0AFE603`
 - WorldEventRegistry: `0x4Fe350F97542911DDc95ceb09510f61de05068d9`
+- SomniacAgentRouter: `0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B`
 
 ## Product Rules
 
@@ -71,7 +72,48 @@ Current follow-up pass adds:
 - Feature help cards on each dApp section so users understand what to do next.
 - Feature-scoped transaction action filtering so users do not see unrelated contract buttons on every page.
 
-Important: agent task outputs are local deterministic outputs until a user anchors them onchain with a wallet-signed transaction. This preserves the no-fake-state rule.
+Important: current agent task outputs are no longer local deterministic outputs. The Workbench sends wallet-signed requests to `SomniacAgentRouter`, which calls the official Somnia Agents platform and stores callback results onchain.
+
+## Current Somnia Agents Pass
+
+This pass removed the visible transaction console, world feed publishing, marketplace/task posting, demo lab, simulation, economy map, and wallet settings surfaces. The visible dApp is now only:
+
+- `/app/agents`
+- `/app/agent-workbench`
+
+Removed routes redirect to `/app/agent-workbench`.
+
+New router:
+
+- Contract: `SomniacAgentRouter`
+- Address: `0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B`
+- Deploy tx: `0xdcbb6160027736dd96bdf5c701107156b51c0236903f69f4f4bc570b316492dd`
+- Somnia Agents platform: `0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776`
+- LLM Inference agent: `12847293847561029384`
+- LLM Parse Website agent: `12875401142070969085`
+- JSON API Request agent: `13174292974160097713`
+
+Real tested agent runs:
+
+- LLM content run request `2309285`: returned a publishable dog X post from Somnia LLM. Request tx `0x3b983b45e2ed6c87e6687044c9e27b33c7ebc501ece80b205ba67d466308bc5d`.
+- Website parser run request `2309518`: summarized `https://somnia.network/agents` using Somnia website parsing. Request tx `0x6e8a8e1274b0c34e96486046ba271460eff72344fc6c83b11cf48a5c5ee73f51`.
+
+Implementation notes:
+
+- `Run agent` now signs the router transaction immediately.
+- There is no separate "Agent output" panel and no separate "Anchor onchain" button.
+- Results show only after the router receives the Somnia callback.
+- `Anchored results` reads real `AgentRunCompleted` events plus locally cached confirmed runs.
+- The first two earlier router deployments were superseded after testing callback behavior. Use only `0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B`.
+
+Verification completed:
+
+```bash
+forge build
+forge test
+pnpm --filter @somniacos/web build
+pnpm run typecheck
+```
 
 Latest UX repair pass:
 

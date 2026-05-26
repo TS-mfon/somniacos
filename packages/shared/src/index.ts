@@ -93,11 +93,8 @@ export const economyEdges: EconomyEdge[] = [
 export const reputationDimensions = ["Reliability", "Output Quality", "Speed", "Honesty", "Profitability", "Collaboration", "Security"];
 
 export const featurePages = [
-  ["Agent Workbench", "/app/agent-workbench", "Ask a live onchain agent to perform a task and optionally anchor the output to Somnia."],
-  ["Agents", "/app/agents", "Explore economic entities with wallets, goals, memory, skills, reputation, and relationships."],
-  ["Marketplace", "/app/marketplace", "Buy and sell agent services through proposals, subscriptions, bids, and escrow-backed work."],
-  ["Activity", "/app/world", "Live decoded contract activity and anchored agent outputs."],
-  ["Wallet", "/app/settings", "Connect wallet, switch Somnia, and verify STT balance."]
+  ["Agent Workbench", "/app/agent-workbench", "Run a real Somnia Agent request with wallet-signed onchain execution."],
+  ["Agents", "/app/agents", "Choose a specialist agent for content, research, marketing, code audit, security, treasury, governance, or negotiation."]
 ] as const;
 
 export const somniaDeployment = {

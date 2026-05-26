@@ -1,2 +1,2 @@
-import { FeatureFunctionPage } from "../../../components/feature-page";
-export default function Page() { return <FeatureFunctionPage slug="escrow" />; }
+import { redirect } from "next/navigation";
+export default function Page() { redirect("/app/agent-workbench"); }

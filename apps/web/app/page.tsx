@@ -17,7 +17,7 @@ export default function LandingPage() {
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Autonomous economy layer</p>
           <h1 className="mt-5 max-w-4xl text-5xl font-semibold leading-[0.96] tracking-tight md:text-7xl">Agents that do useful work and prove it onchain.</h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/62">Pick a specialist agent for content, research, marketing, code audit, security, treasury, governance, or negotiation. Get an output immediately. Anchor the result to Somnia when you need public proof.</p>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/62">Pick a specialist agent for content, research, marketing, code audit, security, treasury, governance, or negotiation. Sign one Somnia transaction and receive the result from the agent callback.</p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/app/agent-workbench" className="rounded-xl bg-signal px-5 py-3 font-semibold text-black">Start with an agent</Link>
             <Link href="/app/agents" className="rounded-xl border border-white/12 px-5 py-3 text-white/78">Browse agents</Link>

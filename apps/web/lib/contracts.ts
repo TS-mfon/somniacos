@@ -24,7 +24,8 @@ export const contracts = {
   Treasury: "0x3C1F34D1f93793Cc07747BE639A472C1e14f3f5f",
   Governance: "0x389cB8A4C506A68b8d1757de12A310C6efd981f9",
   PartnershipRegistry: "0x20e312df00BffD3A4270e4efa0d396d2d0AFE603",
-  WorldEventRegistry: "0x4Fe350F97542911DDc95ceb09510f61de05068d9"
+  WorldEventRegistry: "0x4Fe350F97542911DDc95ceb09510f61de05068d9",
+  SomniacAgentRouter: "0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B"
 } as const;
 
 export const agentRegistryAbi = [
@@ -108,6 +109,14 @@ export const worldEventRegistryAbi = [
   { type: "event", name: "WorldEventRecorded", inputs: [{ indexed: true, name: "eventId", type: "bytes32" }, { indexed: false, name: "kind", type: "string" }, { indexed: false, name: "metadataURI", type: "string" }] }
 ] as const;
 
+export const somniacAgentRouterAbi = [
+  { type: "function", name: "getRequiredDeposit", stateMutability: "view", inputs: [{ name: "mode", type: "uint8" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "requestAgentRun", stateMutability: "payable", inputs: [{ name: "appAgentId", type: "string" }, { name: "task", type: "string" }, { name: "constraints", type: "string" }, { name: "urls", type: "string[]" }], outputs: [{ name: "requestId", type: "uint256" }] },
+  { type: "function", name: "getRun", stateMutability: "view", inputs: [{ name: "requestId", type: "uint256" }], outputs: [{ name: "user", type: "address" }, { name: "appAgentId", type: "string" }, { name: "task", type: "string" }, { name: "constraints", type: "string" }, { name: "url", type: "string" }, { name: "somniaAgentId", type: "uint256" }, { name: "mode", type: "uint8" }, { name: "status", type: "uint8" }, { name: "result", type: "string" }, { name: "createdAt", type: "uint256" }, { name: "completedAt", type: "uint256" }] },
+  { type: "event", name: "AgentRunRequested", inputs: [{ indexed: true, name: "requestId", type: "uint256" }, { indexed: true, name: "user", type: "address" }, { indexed: false, name: "appAgentId", type: "string" }, { indexed: true, name: "somniaAgentId", type: "uint256" }, { indexed: false, name: "mode", type: "uint8" }, { indexed: false, name: "task", type: "string" }, { indexed: false, name: "url", type: "string" }, { indexed: false, name: "deposit", type: "uint256" }] },
+  { type: "event", name: "AgentRunCompleted", inputs: [{ indexed: true, name: "requestId", type: "uint256" }, { indexed: true, name: "user", type: "address" }, { indexed: false, name: "appAgentId", type: "string" }, { indexed: false, name: "status", type: "uint8" }, { indexed: false, name: "result", type: "string" }] }
+] as const;
+
 export const contractCatalog = [
   { key: "AgentRegistry", address: contracts.AgentRegistry, abi: agentRegistryAbi },
   { key: "OrganizationRegistry", address: contracts.OrganizationRegistry, abi: organizationRegistryAbi },
@@ -119,5 +128,6 @@ export const contractCatalog = [
   { key: "Treasury", address: contracts.Treasury, abi: treasuryAbi },
   { key: "Governance", address: contracts.Governance, abi: governanceAbi },
   { key: "PartnershipRegistry", address: contracts.PartnershipRegistry, abi: partnershipRegistryAbi },
-  { key: "WorldEventRegistry", address: contracts.WorldEventRegistry, abi: worldEventRegistryAbi }
+  { key: "WorldEventRegistry", address: contracts.WorldEventRegistry, abi: worldEventRegistryAbi },
+  { key: "SomniacAgentRouter", address: contracts.SomniacAgentRouter, abi: somniacAgentRouterAbi }
 ] as const;

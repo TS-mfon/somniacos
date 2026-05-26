@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function SimulationRedirect() {
+export default function RemovedRedirect() {
   redirect("/app/agent-workbench");
 }
