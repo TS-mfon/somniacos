@@ -5,10 +5,12 @@
 SomniacOS is a fresh monorepo at `/home/sudodave/somniacos`. It is not a retrofit of another local codebase.
 
 - GitHub: `https://github.com/TS-mfon/somniacos`
-- Latest known commit before this handoff pass: `5b9a7ac feat: connect dapp to somnia contracts`
+- Latest pushed commit: `9a4430c chore: seed agent callback receipts`
 - Production host: `https://somniacos.vercel.app`
-- Existing Vercel production deployment was verified as `Ready`.
-- Live API verified: `https://somniacos.vercel.app/api/onchain/activity` returned `ok: true`, latest block, and `28` decoded real Somnia contract events.
+- Current Vercel production deployment: `dpl_C5ae2K2dqf7FtuQNH2D6aPMYtBsn`
+- Current Vercel URL: `https://somniacos-bqnpq9m00-gen-daves-projects.vercel.app`
+- Live alias verified: `https://somniacos.vercel.app`
+- Live API verified: `https://somniacos.vercel.app/api/onchain/activity` returned `ok: true`, block `392993994`, and `32` decoded real Somnia contract events, including `AgentRunCompleted` callback outputs.
 
 ## Somnia Deployment
 
@@ -63,16 +65,7 @@ Commit `d0cd997` completed the first real-interaction pass:
 - Added a real guided demo lab where a visitor with funded STT can run the scenario as wallet-signed contract transactions.
 - Improved the visual system and deployed to Vercel production.
 
-Current follow-up pass adds:
-
-- `GuidedOnboarding`: plain-language wallet, Somnia network, STT, and first-agent-task guidance for zero-knowledge visitors.
-- `AgentWorkbench`: deterministic local agent task execution that works without external AI provider keys.
-- `runLocalAgentTask`: local agent engine that produces structured deliverables, risk notes, recommended onchain action, and metadata URI.
-- `/app/agent-workbench`: page for users to select a real onchain agent, ask it to perform a task, and optionally anchor the output to `WorldEventRegistry`.
-- Feature help cards on each dApp section so users understand what to do next.
-- Feature-scoped transaction action filtering so users do not see unrelated contract buttons on every page.
-
-Important: current agent task outputs are no longer local deterministic outputs. The Workbench sends wallet-signed requests to `SomniacAgentRouter`, which calls the official Somnia Agents platform and stores callback results onchain.
+Important: current agent task outputs are not local deterministic outputs. The Workbench sends wallet-signed requests to `SomniacAgentRouter`, which calls the official Somnia Agents platform and stores callback results onchain.
 
 ## Current Somnia Agents Pass
 
@@ -95,8 +88,8 @@ New router:
 
 Real tested agent runs:
 
-- LLM content run request `2309285`: returned a publishable dog X post from Somnia LLM. Request tx `0x3b983b45e2ed6c87e6687044c9e27b33c7ebc501ece80b205ba67d466308bc5d`.
-- Website parser run request `2309518`: summarized `https://somnia.network/agents` using Somnia website parsing. Request tx `0x6e8a8e1274b0c34e96486046ba271460eff72344fc6c83b11cf48a5c5ee73f51`.
+- LLM content run request `2309285`: returned a publishable dog X post from Somnia LLM. Request tx `0x3b983b45e2ed6c87e6687044c9e27b33c7ebc501ece80b205ba67d466308bc5d`; callback tx `0xe450db904f0aebbe8d41912223030d4bae1d5173feeb957b2641611d7c252b85`.
+- Website parser run request `2309518`: summarized `https://somnia.network/agents` using Somnia website parsing. Request tx `0x6e8a8e1274b0c34e96486046ba271460eff72344fc6c83b11cf48a5c5ee73f51`; callback tx `0x73c2b12288b4bd261d92beb23703b5773c8e1e999b533c92c0065abf93bcdc99`.
 
 Implementation notes:
 
@@ -126,6 +119,15 @@ Latest UX repair pass:
 - Fixed the anchored-output bug: agent output anchoring now writes a recoverable `data:application/json;base64,...` payload to `WorldEventRegistry.metadataURI` instead of an unrecoverable placeholder URI.
 - Added decoded anchored output rendering in the workbench, plus local output mirroring for continuity before/while logs are indexed.
 
+Latest finalization pass:
+
+- Added the two real Somnia Agent request transactions and the two callback transactions to the seeded receipt index so production can always decode the proof trail, even after the recent-log window moves.
+- Rebuilt with `pnpm --filter @somniacos/web build`.
+- Rebuilt Vercel Build Output API artifact with `npx vercel build --prod`.
+- Deployed with `npx vercel deploy --prebuilt --prod --archive tgz`.
+- Verified production returned HTTP `200`.
+- Verified production `/api/onchain/activity` includes `AgentRunCompleted` with actual returned results for the content writer and research analyst.
+
 ## VPS Status
 
 User requested VPS hosting at `172.236.110.179`, but the server is not currently deployable from this environment.
@@ -152,11 +154,11 @@ curl -sS https://somniacos.vercel.app/api/onchain/activity
 
 Manual browser checks:
 
-- Landing page loads and shows real onchain event activity.
-- `/app` command center loads without static fake counts.
-- `/app/demo-lab` guides a funded wallet through real transaction steps.
-- `/app/agent-workbench` lets a user pick a real onchain agent, generate task output, and anchor it onchain.
+- Landing page loads as a minimal pitch with no fake world/activity claims.
+- Navigation only exposes Agents and Workbench.
+- Removed routes redirect to `/app/agent-workbench`.
+- `/app/agents` shows curated functional agents.
+- `/app/agent-workbench` lets a funded wallet pick an agent, sign `Run agent`, wait for the Somnia callback, and see the result in the modal and Anchored Results.
 - `/app/agent-workbench` should produce a real X post for "Write an X post about dogs."
-- Anchored workbench output should remain recoverable after refresh from decoded onchain metadata when the event is indexed.
-- `/app/agents`, `/app/organizations`, `/app/marketplace`, `/app/escrow`, `/app/governance`, `/app/world` show real event-derived state.
-- Wallet connect, network switch, transaction submit, receipt confirmation, explorer links, and error states work.
+- Anchored Results should show the seeded completed content writer and research analyst callback outputs from `AgentRunCompleted`.
+- Wallet connect, network switch, request deposit, receipt confirmation, explorer links, callback polling, and error states work.
