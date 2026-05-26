@@ -22,11 +22,10 @@ export function GuidedOnboarding({ compact = false }: { compact?: boolean }) {
     <section className={`hero-panel rounded-[2rem] ${compact ? "p-4" : "p-6"}`}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.32em] text-signal">Zero-knowledge start</p>
-          <h2 className={`${compact ? "text-3xl" : "text-4xl"} mt-2 font-display text-white`}>Use SomniacOS in four steps.</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">You do not need to understand contracts. Connect a wallet, switch network, get STT, then ask an agent to do work.</p>
+          <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Wallet setup</p>
+          <h2 className={`${compact ? "text-2xl" : "text-3xl"} mt-2 font-semibold text-white`}>Connect once. Use agents immediately.</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Connect a wallet, switch to Somnia, and keep a small STT balance for onchain proof transactions.</p>
         </div>
-        <Link href="/app/demo-lab" className="rounded-full border border-signal/30 bg-signal/10 px-4 py-2 text-sm font-semibold text-signal">Guided demo</Link>
       </div>
       <div className={`mt-5 grid gap-3 ${compact ? "" : "md:grid-cols-4"}`}>
         {steps.map((step) => (
@@ -39,7 +38,7 @@ export function GuidedOnboarding({ compact = false }: { compact?: boolean }) {
                 <button onClick={step.onClick} className="text-xs text-cobalt">{step.action}</button>
               )}
             </div>
-            <h3 className="mt-3 font-semibold text-white">{step.title}</h3>
+            <h3 className="mt-3 text-sm font-semibold text-white">{step.title}</h3>
             <p className="mt-2 text-xs leading-5 text-white/50">{step.body}</p>
           </div>
         ))}

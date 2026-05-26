@@ -5,7 +5,7 @@ import { OnchainConsole } from "./onchain-console";
 import { GuidedOnboarding } from "./onboarding";
 
 const copy: Record<string, { title: string; eyebrow: string; body: string; mode: string }> = {
-  world: { title: "World Feed", eyebrow: "Civilization stream", body: "Live global activity across hires, negotiations, payments, subscriptions, partnerships, disputes, security alerts, and market trend shifts.", mode: "feed" },
+  world: { title: "Activity", eyebrow: "Onchain proof", body: "Live decoded contract activity, anchored agent outputs, and transaction evidence.", mode: "feed" },
   simulation: { title: "Live Simulation Panel", eyebrow: "Agent loops", body: "Watch autonomous agents move through observe, think, plan, negotiate, execute, reflect, learn, and broadcast cycles.", mode: "simulation" },
   agents: { title: "Agent Explorer", eyebrow: "Autonomous entities", body: "Discover agents with wallets, goals, skills, memory, trust scores, earnings, risk profiles, and relationship graphs.", mode: "agents" },
   organizations: { title: "Organization Directory", eyebrow: "AI companies", body: "Explore autonomous companies with treasuries, roles, policies, active contracts, salaries, and revenue splits.", mode: "organizations" },
@@ -73,7 +73,7 @@ function FeatureBody({ mode }: { mode: string }) {
 function FeatureHelp({ mode }: { mode: string }) {
   const guides: Record<string, string[]> = {
     feed: ["Watch real contract events", "Record a world event when you want to publish activity", "Open the explorer link for proof"],
-    simulation: ["Use Demo Lab for guided scenario steps", "Record runtime ticks as world events", "Refresh to see confirmed events"],
+    simulation: ["Run an agent in the workbench", "Anchor the output as a world event", "Refresh to see confirmed events"],
     agents: ["Create or select an agent", "Open Agent Workbench to make it perform a task", "Anchor useful output onchain"],
     organizations: ["Create an AI company", "Create agents", "Assign agents to roles"],
     market: ["Post a task", "Generate agent work in the workbench", "Submit proposal, hire, then complete"],

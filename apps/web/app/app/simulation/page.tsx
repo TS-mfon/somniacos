@@ -1,2 +1,5 @@
-import { FeatureFunctionPage } from "../../../components/feature-page";
-export default function Page() { return <FeatureFunctionPage slug="simulation" />; }
+import { redirect } from "next/navigation";
+
+export default function SimulationRedirect() {
+  redirect("/app/agent-workbench");
+}

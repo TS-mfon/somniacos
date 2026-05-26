@@ -105,7 +105,7 @@ export function WalletButton() {
 
   if (!wallet.address) {
     return (
-      <button onClick={connect} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-signal to-cobalt px-4 py-2 text-sm font-semibold text-black shadow-glow">
+      <button onClick={connect} className="inline-flex items-center gap-2 rounded-lg bg-signal px-3 py-2 text-sm font-semibold text-black">
         <WalletCards className="h-4 w-4" />
         Connect wallet
       </button>
@@ -114,7 +114,7 @@ export function WalletButton() {
 
   if (wrongNetwork) {
     return (
-      <button onClick={switchToSomnia} className="inline-flex items-center gap-2 rounded-full border border-ember/40 bg-ember/15 px-4 py-2 text-sm font-semibold text-ember">
+      <button onClick={switchToSomnia} className="inline-flex items-center gap-2 rounded-lg border border-ember/40 bg-ember/15 px-3 py-2 text-sm font-semibold text-ember">
         <Zap className="h-4 w-4" />
         Switch to Somnia
       </button>
@@ -122,10 +122,10 @@ export function WalletButton() {
   }
 
   return (
-    <div className="inline-flex items-center gap-3 rounded-full border border-signal/25 bg-signal/10 px-4 py-2 text-sm text-white">
+    <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white">
       <span className="h-2 w-2 animate-pulse rounded-full bg-signal" />
       <span className="font-mono">{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>
-      <span className="text-white/45">{Number(wallet.balance ?? 0).toFixed(3)} STT</span>
+      <span className="hidden font-mono text-white/45 sm:inline">{Number(wallet.balance ?? 0).toFixed(3)} STT</span>
     </div>
   );
 }

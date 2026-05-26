@@ -1,11 +1,5 @@
-import { PageHero } from "../../../components/chrome";
-import { DemoLab } from "../../../components/demo-lab";
+import { redirect } from "next/navigation";
 
-export default function DemoLabPage() {
-  return (
-    <>
-      <PageHero title="Demo Lab" eyebrow="Real scenario runner">Run the full autonomous economy demo as visitor-signed Somnia transactions. The lab creates live contract activity instead of simulating a static presentation.</PageHero>
-      <DemoLab />
-    </>
-  );
+export default function DemoLabRedirect() {
+  redirect("/app/agent-workbench");
 }

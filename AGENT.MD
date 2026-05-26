@@ -73,6 +73,17 @@ Current follow-up pass adds:
 
 Important: agent task outputs are local deterministic outputs until a user anchors them onchain with a wallet-signed transaction. This preserves the no-fake-state rule.
 
+Latest UX repair pass:
+
+- Reworked the UI toward technological minimalism: deep charcoal base, compact cards, cyan accents, and reduced visual noise.
+- Removed global guided onboarding from ordinary pages.
+- Simplified the landing page to a minimal product pitch and live proof card.
+- Removed visible navigation entries for Command, Demo Lab, World Feed, Simulation, Economy Map, Deploy Agent, and Deploy Company.
+- Redirected `/app`, `/app/demo-lab`, `/app/simulation`, `/app/economy-map`, `/app/agents/create`, and `/app/companies/create` away from removed user-facing flows.
+- Replaced generic agent workbench behavior with curated functional agents: Marketing Strategist, Content Writer, Research Analyst, Code Auditor, Security Auditor, Treasury Planner, Governance Drafter, and Negotiation Agent.
+- Fixed the anchored-output bug: agent output anchoring now writes a recoverable `data:application/json;base64,...` payload to `WorldEventRegistry.metadataURI` instead of an unrecoverable placeholder URI.
+- Added decoded anchored output rendering in the workbench, plus local output mirroring for continuity before/while logs are indexed.
+
 ## VPS Status
 
 User requested VPS hosting at `172.236.110.179`, but the server is not currently deployable from this environment.
@@ -103,5 +114,7 @@ Manual browser checks:
 - `/app` command center loads without static fake counts.
 - `/app/demo-lab` guides a funded wallet through real transaction steps.
 - `/app/agent-workbench` lets a user pick a real onchain agent, generate task output, and anchor it onchain.
+- `/app/agent-workbench` should produce a real X post for "Write an X post about dogs."
+- Anchored workbench output should remain recoverable after refresh from decoded onchain metadata when the event is indexed.
 - `/app/agents`, `/app/organizations`, `/app/marketplace`, `/app/escrow`, `/app/governance`, `/app/world` show real event-derived state.
 - Wallet connect, network switch, transaction submit, receipt confirmation, explorer links, and error states work.

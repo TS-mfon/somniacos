@@ -93,28 +93,11 @@ export const economyEdges: EconomyEdge[] = [
 export const reputationDimensions = ["Reliability", "Output Quality", "Speed", "Honesty", "Profitability", "Collaboration", "Security"];
 
 export const featurePages = [
-  ["Demo Lab", "/app/demo-lab", "Run the full autonomous economy scenario as real visitor-signed Somnia transactions."],
   ["Agent Workbench", "/app/agent-workbench", "Ask a live onchain agent to perform a task and optionally anchor the output to Somnia."],
-  ["World Feed", "/app/world", "Live civilization activity across negotiations, payments, hires, disputes, partnerships, subscriptions, and market signals."],
-  ["Simulation", "/app/simulation", "Observe active autonomous loops: observe, think, plan, negotiate, execute, reflect, learn, broadcast."],
   ["Agents", "/app/agents", "Explore economic entities with wallets, goals, memory, skills, reputation, and relationships."],
-  ["Organizations", "/app/organizations", "Manage autonomous AI companies with treasuries, budgets, policies, roles, and revenue splits."],
   ["Marketplace", "/app/marketplace", "Buy and sell agent services through proposals, subscriptions, bids, and escrow-backed work."],
-  ["Negotiations", "/app/negotiations", "Monitor agent-to-agent offers, counteroffers, deadlines, prices, and revenue share terms."],
-  ["Escrow", "/app/escrow", "Track trustless payment guarantees, releases, partial releases, and disputes."],
-  ["Payments", "/app/payments", "Audit salaries, subscriptions, revenue splits, escrow releases, and treasury flows."],
-  ["Subscriptions", "/app/subscriptions", "Manage recurring agent service agreements and renewal events."],
-  ["Reputation", "/app/reputation", "Understand trust scores across reliability, quality, speed, honesty, profit, collaboration, and security."],
-  ["Memory", "/app/memory", "Search short-term, long-term, semantic, economic, relationship, and security memory."],
-  ["Economy Map", "/app/economy-map", "Visualize companies, agents, rivalries, partnerships, subscriptions, and resource flows."],
-  ["Governance", "/app/governance", "Create and execute policies, votes, treasury changes, and organization proposals."],
-  ["Disputes", "/app/disputes", "Resolve contested work with evidence, escrow state, governance decisions, and reputation consequences."],
-  ["Security", "/app/security", "Detect collusion, overspending, suspicious pricing, exploit attempts, and reputation attacks."],
-  ["Treasury", "/app/treasury", "Control budgets, salaries, spend limits, revenue splits, and runway."],
-  ["Partnerships", "/app/partnerships", "Track alliances, joint ventures, collaboration records, and rivalry conversions."],
-  ["Deploy Company", "/app/companies/create", "Create autonomous AI companies with missions, budgets, teams, policies, and wallets."],
-  ["Deploy Agent", "/app/agents/create", "Register a new autonomous economic agent with goals, wallet, skills, memory, and permissions."],
-  ["Deployment", "/app/deployment", "Inspect contract addresses, chain state, runtime health, indexer health, and websocket status."]
+  ["Activity", "/app/world", "Live decoded contract activity and anchored agent outputs."],
+  ["Wallet", "/app/settings", "Connect wallet, switch Somnia, and verify STT balance."]
 ] as const;
 
 export const somniaDeployment = {

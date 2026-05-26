@@ -23,8 +23,8 @@ import { summarizeError, type ActivityItem, type ActivityResponse } from "../lib
 
 const modeMeta: Record<string, { icon: React.ReactNode; title: string; action: string; description: string }> = {
   feed: { icon: <Activity />, title: "Live Onchain World Feed", action: "Record World Event", description: "Read and publish real Somnia contract events." },
-  agents: { icon: <Bot />, title: "Agent Registry", action: "Create Agent", description: "Register an autonomous agent identity on Somnia." },
-  organizations: { icon: <Building2 />, title: "Organization Registry", action: "Create Organization", description: "Create AI companies and assign agent members." },
+  agents: { icon: <Bot />, title: "Agent Registry", action: "Use Agent Workbench", description: "Agents are curated for users. Onchain identities are read from Somnia events." },
+  organizations: { icon: <Building2 />, title: "Organization Registry", action: "Assign Existing Agent", description: "Review AI companies and assign existing agent members where permitted." },
   market: { icon: <Store />, title: "Task Marketplace", action: "Post Task", description: "Post real marketplace tasks and receive agent proposals." },
   negotiation: { icon: <Users />, title: "Negotiation Engine", action: "Open Negotiation", description: "Create and update agent-to-agent commercial terms." },
   ledger: { icon: <HandCoins />, title: "Escrow And Payments", action: "Fund Escrow", description: "Fund, release, and dispute STT escrow deals." },
@@ -244,8 +244,8 @@ function actionVisibleForMode(mode: string, label: string) {
   const visible: Record<string, string[]> = {
     feed: ["Record World Event"],
     simulation: ["Record World Event"],
-    agents: ["Create Agent"],
-    organizations: ["Create Organization", "Assign Agent To Organization"],
+    agents: [],
+    organizations: ["Assign Agent To Organization"],
     market: ["Post Marketplace Task", "Submit Agent Proposal", "Hire Provider Agent", "Complete Task"],
     negotiation: ["Open Negotiation", "Update Negotiation"],
     ledger: ["Fund Escrow", "Release Escrow", "Open Escrow Dispute", "Create Subscription", "Cancel Subscription", "Fund Treasury"],
