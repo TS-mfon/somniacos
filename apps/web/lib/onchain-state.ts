@@ -165,8 +165,19 @@ export function buildEconomyState(activity: ActivityItem[]): EconomyState {
 export function summarizeError(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error);
   const message = raw.toLowerCase();
-  if (message.includes("user rejected") || message.includes("rejected")) return "Transaction rejected in wallet.";
-  if (message.includes("insufficient funds")) return "Insufficient STT for this transaction. Fund your Somnia Shannon wallet and retry.";
+  if (message.includes("user rejected") || message.includes("rejected") || message.includes("denied")) return "You rejected the wallet request. No STT was spent. Click Run agent again when you are ready to sign.";
+  if (message.includes("insufficient funds")) return "Insufficient STT. Fund your Somnia Shannon wallet, then retry the agent request.";
+  if (message.includes("underfunded")) return "The Somnia Agent deposit was underfunded. Refresh the page to get a fresh quote, then retry.";
+  if (message.includes("transaction reverted") || message.includes("execution reverted")) return "The onchain transaction reverted. Check your STT balance, refresh the deposit quote, and retry.";
+  if (message.includes("timeout") || message.includes("timed out")) return "Somnia did not return in time. Your request may still be running onchain; refresh the Workbench to continue checking.";
+  if (message.includes("failed to fetch") || message.includes("fetch failed") || message.includes("networkerror")) return "Network connection failed. Check your internet connection and retry.";
+  if (message.includes("rpc") || message.includes("rate limit")) return "Somnia RPC is busy right now. Wait a moment, then retry or refresh.";
+  if (message.includes("wallet is locked") || message.includes("unauthorized")) return "Your wallet is locked or not authorized. Unlock it, connect this site, then retry.";
+  if (message.includes("invalid url") || message.includes("url")) return "Invalid website URL. Use a full https:// or http:// URL, or leave the URL field empty for normal LLM mode.";
+  if (message.includes("task too large")) return "The task is too long. Shorten it and retry.";
+  if (message.includes("constraints too large")) return "The constraints are too long. Shorten them and retry.";
+  if (message.includes("too many urls")) return "Use at most 3 URLs. The current router sends the first URL to Somnia's website parser.";
+  if (message.includes("callback") || message.includes("usable result")) return "The agent request was submitted, but Somnia did not return a usable result yet. Check Anchored Results or refresh later.";
   if (message.includes("invalid address")) return "Invalid address. Paste a valid 0x wallet or contract address.";
   if (message.includes("cannot convert") || message.includes("bigint")) return "Invalid number or ID. Use whole-number IDs and valid STT amounts.";
   if (message.includes("chain") || message.includes("network")) return "Wrong network. Switch your wallet to Somnia Shannon and retry.";
