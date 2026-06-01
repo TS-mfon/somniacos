@@ -89,6 +89,17 @@ Production verification completed:
 - `https://somniacos.vercel.app/api/os/processes` returned `source: contract` with seeded process `#1`, request `3788699`, and `feesPaid: 0.3400 STT`.
 - `POST https://somniacos.vercel.app/api/agents/run` returned a live LLM result for a dog X post using provider `pollinations`.
 
+## 2026-06-01 OS Section Removal
+
+The visible OS section was removed because it was not useful to visitors.
+
+- App navigation is now only Agents, Workbench, and Revenue.
+- Revenue moved from `/app/os/revenue` to `/app/revenue`.
+- `/app/os`, `/app/os/company`, `/app/os/capabilities`, `/app/os/processes/[id]`, and `/app/os/revenue` now redirect away from the removed OS UI.
+- The unused `OSCommandCenter` component was removed.
+- OS APIs and contracts remain in place because Workbench and Revenue still use the underlying one-transaction workflow and fee accounting.
+- Verification after removal: `pnpm --filter @somniacos/web build` and `pnpm --filter @somniacos/web typecheck`.
+
 Current caveat:
 
 - The new Workbench output path is real LLM execution, but because the Vercel project currently has no `OPENAI_API_KEY`, it uses the public fallback provider. For stronger reliability, add `OPENAI_API_KEY` and optionally `OPENAI_MODEL` to Vercel.

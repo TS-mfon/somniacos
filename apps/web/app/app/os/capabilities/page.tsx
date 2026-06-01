@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function OSCapabilitiesPage() {
-  redirect("/app/os");
+  redirect("/app/agent-workbench");
 }
