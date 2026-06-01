@@ -17,7 +17,13 @@
     "Governance": "0x389cB8A4C506A68b8d1757de12A310C6efd981f9",
     "PartnershipRegistry": "0x20e312df00BffD3A4270e4efa0d396d2d0AFE603",
     "WorldEventRegistry": "0x4Fe350F97542911DDc95ceb09510f61de05068d9",
-    "SomniacAgentRouter": "0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B"
+    "SomniacAgentRouter": "0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B",
+    "ProtocolFeeVault": "0x46ef146089c726fefb039fc13de3915b38588f52",
+    "CapabilityRegistry": "0xe9e9d7a274528d2b055ade9c5f4b7f9df639e2f7",
+    "AutonomyPolicyRegistry": "0x4a38251e67229438235b0999ceb086cb2987b55c",
+    "MemoryLedger": "0xd64faee84313f7564e7dc7655088c3b4a4263cfb",
+    "ProcessManager": "0x5425a0fbb13e860737d56999e21ed14e1adbb142",
+    "SomniacAgentRouterV2": "0x0e6a46564aa6c004ebc9881d09515413842883b8"
   },
   "transactions": {
     "AgentRegistry": "0xb522cb7dba31a9dbf4b827efd48d873789961de8b7866d0f741d9fdb98f61394",
@@ -31,6 +37,26 @@
     "Governance": "0xe20ab36c93f5de42e99a3bf82c11bb980b8c94db844662d2473a04f08249a22d",
     "PartnershipRegistry": "0x9e0799a58df2abed85206c74f10844a8ba8880efd370de094390e2e03b91c04e",
     "WorldEventRegistry": "0xcbd40d6abd56a62060742879d1f66613dd4c2b5286c4adb314124eed3617a730",
-    "SomniacAgentRouter": "0xdcbb6160027736dd96bdf5c701107156b51c0236903f69f4f4bc570b316492dd"
+    "SomniacAgentRouter": "0xdcbb6160027736dd96bdf5c701107156b51c0236903f69f4f4bc570b316492dd",
+    "ProtocolFeeVault": "0xdd67fc1c9bc27e480e2209cff2e4338613b081cd818a81a4a1a2ac2df8fbe198",
+    "CapabilityRegistry": "0xbbc593a81b1322f02d228dd745bb5bef815527f0d0e5404f40b18e2f7e341470",
+    "AutonomyPolicyRegistry": "0x2e998660dda3cdacd3552989d0663c4ff5241ec0371a1d92613c58e90235460b",
+    "MemoryLedger": "0xeda117be7a522085894b878ad1120c3fd74a92120449ecd9e80c2f215374d4af",
+    "ProcessManager": "0x4d1f61aa885faaa8a13f6754383159f6152b1bf8d4bd5681c9d10abbeff0fd32",
+    "SomniacAgentRouterV2": "0x00865cff170075a578f547a822eb75d718288832e2419c803327f405bbda23f8",
+    "MemoryLedgerSetProcessManager": "0x622f4702c0874838fa9d5a965fb098a5c1e247283dddc32053af0f285da29320",
+    "ProcessManagerSetRouter": "0x24bb82665cd160549f50422364f140895e2462bd40e6cd0c17c1b83c5d833d0a",
+    "Capability:content.write": "0x5f375a9e185fc64261ec63dd93e1931dcf541075919d188a53c9bc1ae83acedc",
+    "Capability:marketing.strategy": "0x812bf513a874625aa6de09270a3db8ba1ef877846b11327a7705e2a5f149eea4",
+    "Capability:research.web": "0x8870ee08a686117c5594b506810ab6536277e5a91d92b8319f5851a7e0163992",
+    "Capability:research.api": "0x1e1f4542bf875002c39963f4a03ae4d2c9e4e3fa0299d21991e88f2fbad16db8",
+    "Capability:audit.code": "0x7af89deae2e33f218fe1d69a32345ea41b89b5da236f4c7ba163e35e1c1ff055",
+    "Capability:treasury.plan": "0xf151ad628bdf7b5afd1369b461930de63ab9e7b6eaf54e0f31662406efb8ebf3",
+    "Capability:governance.draft": "0x9775e0ffe123dcc7874fe4aa8a1c236bac87bc790fa76674d31a01db4cc83135",
+    "Capability:security.monitor": "0x2641ff0813b35fcd31cbde90a71931933fdd999b3f69508a0849d7a404574cf7"
+  },
+  "protocolFee": {
+    "amountSTT": "0.1",
+    "recipient": "0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E"
   }
 }

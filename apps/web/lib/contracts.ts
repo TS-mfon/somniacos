@@ -31,15 +31,15 @@ export const contracts = {
 export const zeroAddress = "0x0000000000000000000000000000000000000000";
 
 export const osContracts = {
-  ProtocolFeeVault: process.env.NEXT_PUBLIC_PROTOCOL_FEE_VAULT ?? zeroAddress,
-  CapabilityRegistry: process.env.NEXT_PUBLIC_CAPABILITY_REGISTRY ?? zeroAddress,
-  AutonomyPolicyRegistry: process.env.NEXT_PUBLIC_AUTONOMY_POLICY_REGISTRY ?? zeroAddress,
-  ProcessManager: process.env.NEXT_PUBLIC_PROCESS_MANAGER ?? zeroAddress,
-  MemoryLedger: process.env.NEXT_PUBLIC_MEMORY_LEDGER ?? zeroAddress,
-  SomniacAgentRouterV2: process.env.NEXT_PUBLIC_SOMNIAC_AGENT_ROUTER_V2 ?? zeroAddress
+  ProtocolFeeVault: process.env.NEXT_PUBLIC_PROTOCOL_FEE_VAULT ?? "0x46ef146089c726fefb039fc13de3915b38588f52",
+  CapabilityRegistry: process.env.NEXT_PUBLIC_CAPABILITY_REGISTRY ?? "0xe9e9d7a274528d2b055ade9c5f4b7f9df639e2f7",
+  AutonomyPolicyRegistry: process.env.NEXT_PUBLIC_AUTONOMY_POLICY_REGISTRY ?? "0x4a38251e67229438235b0999ceb086cb2987b55c",
+  ProcessManager: process.env.NEXT_PUBLIC_PROCESS_MANAGER ?? "0x5425a0fbb13e860737d56999e21ed14e1adbb142",
+  MemoryLedger: process.env.NEXT_PUBLIC_MEMORY_LEDGER ?? "0xd64faee84313f7564e7dc7655088c3b4a4263cfb",
+  SomniacAgentRouterV2: process.env.NEXT_PUBLIC_SOMNIAC_AGENT_ROUTER_V2 ?? "0x0e6a46564aa6c004ebc9881d09515413842883b8"
 } as const;
 
-export const osKernelEnabled = process.env.NEXT_PUBLIC_ENABLE_OS_KERNEL === "true";
+export const osKernelEnabled = process.env.NEXT_PUBLIC_ENABLE_OS_KERNEL !== "false";
 export const osKernelConfigured = Object.values(osContracts).every((address) => address !== zeroAddress);
 
 export const agentRegistryAbi = [
@@ -143,6 +143,8 @@ export const protocolFeeVaultAbi = [
 ] as const;
 
 export const capabilityRegistryAbi = [
+  { type: "function", name: "capabilityIds", stateMutability: "view", inputs: [{ name: "", type: "uint256" }], outputs: [{ name: "", type: "bytes32" }] },
+  { type: "function", name: "capabilities", stateMutability: "view", inputs: [{ name: "", type: "bytes32" }], outputs: [{ name: "id", type: "bytes32" }, { name: "label", type: "string" }, { name: "description", type: "string" }, { name: "mode", type: "uint8" }, { name: "active", type: "bool" }, { name: "somniaAgentId", type: "uint256" }, { name: "schemaURI", type: "string" }] },
   { type: "function", name: "getCapabilityCount", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "registerCapability", stateMutability: "nonpayable", inputs: [{ name: "capabilityId", type: "bytes32" }, { name: "label", type: "string" }, { name: "description", type: "string" }, { name: "mode", type: "uint8" }, { name: "somniaAgentId", type: "uint256" }, { name: "schemaURI", type: "string" }], outputs: [] },
   { type: "event", name: "CapabilityRegistered", inputs: [{ indexed: true, name: "capabilityId", type: "bytes32" }, { indexed: false, name: "label", type: "string" }, { indexed: false, name: "mode", type: "uint8" }, { indexed: false, name: "somniaAgentId", type: "uint256" }, { indexed: false, name: "schemaURI", type: "string" }] },

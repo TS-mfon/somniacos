@@ -18,7 +18,8 @@
     "seed:onchain": "tsx scripts/seed-onchain-activity.ts",
     "healthcheck": "tsx scripts/healthcheck.ts",
     "contracts:test": "pnpm --filter @somniacos/contracts test",
-    "contracts:deploy": "tsx scripts/deploy-contracts.ts"
+    "contracts:deploy": "tsx scripts/deploy-contracts.ts",
+    "contracts:deploy:os": "tsx scripts/deploy-os-kernel.ts"
   },
   "dependencies": {
     "next": "^15.1.2",

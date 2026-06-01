@@ -27,7 +27,16 @@ This branch is additive. It does not replace the current production router or Wo
 
 ## Feature Flag
 
-Set:
+The branch now includes live Somnia Shannon defaults:
+
+- `ProtocolFeeVault`: `0x46ef146089c726fefb039fc13de3915b38588f52`
+- `CapabilityRegistry`: `0xe9e9d7a274528d2b055ade9c5f4b7f9df639e2f7`
+- `AutonomyPolicyRegistry`: `0x4a38251e67229438235b0999ceb086cb2987b55c`
+- `MemoryLedger`: `0xd64faee84313f7564e7dc7655088c3b4a4263cfb`
+- `ProcessManager`: `0x5425a0fbb13e860737d56999e21ed14e1adbb142`
+- `SomniacAgentRouterV2`: `0x0e6a46564aa6c004ebc9881d09515413842883b8`
+
+Optional overrides:
 
 ```bash
 NEXT_PUBLIC_ENABLE_OS_KERNEL=true
@@ -50,6 +59,15 @@ Every OS write transaction charges `0.1 STT`:
 - Process step request.
 
 Callbacks, reads, result viewing, and legacy Workbench mode do not charge protocol fees.
+
+Fee recipient: `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
+
+## Deployment Verification
+
+- `ProtocolFeeVault.feeAmount()` returns `100000000000000000`.
+- `ProtocolFeeVault.feeRecipient()` returns `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
+- `CapabilityRegistry.getCapabilityCount()` returns `8`.
+- `ProcessManager.router()` returns `0x0e6A46564Aa6c004EBC9881D09515413842883b8`.
 
 ## Verification
 

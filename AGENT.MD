@@ -5,7 +5,8 @@
 SomniacOS is a fresh monorepo at `/home/sudodave/somniacos`. It is not a retrofit of another local codebase.
 
 - GitHub: `https://github.com/TS-mfon/somniacos`
-- Latest pushed commit: `9a4430c chore: seed agent callback receipts`
+- Active branch for OS work: `feature/agentic-os-kernel`
+- Latest stable production commit before OS branch: `9a4430c chore: seed agent callback receipts`
 - Production host: `https://somniacos.vercel.app`
 - Current Vercel production deployment: `dpl_C5ae2K2dqf7FtuQNH2D6aPMYtBsn`
 - Current Vercel URL: `https://somniacos-bqnpq9m00-gen-daves-projects.vercel.app`
@@ -36,6 +37,43 @@ Contracts:
 - PartnershipRegistry: `0x20e312df00BffD3A4270e4efa0d396d2d0AFE603`
 - WorldEventRegistry: `0x4Fe350F97542911DDc95ceb09510f61de05068d9`
 - SomniacAgentRouter: `0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B`
+
+## Agentic OS Kernel Branch
+
+The branch `feature/agentic-os-kernel` adds the operating-system layer without changing `main`.
+
+New deployed Somnia Shannon contracts:
+
+- ProtocolFeeVault: `0x46ef146089c726fefb039fc13de3915b38588f52`
+- CapabilityRegistry: `0xe9e9d7a274528d2b055ade9c5f4b7f9df639e2f7`
+- AutonomyPolicyRegistry: `0x4a38251e67229438235b0999ceb086cb2987b55c`
+- MemoryLedger: `0xd64faee84313f7564e7dc7655088c3b4a4263cfb`
+- ProcessManager: `0x5425a0fbb13e860737d56999e21ed14e1adbb142`
+- SomniacAgentRouterV2: `0x0e6a46564aa6c004ebc9881d09515413842883b8`
+
+Protocol monetization:
+
+- Fee amount: `0.1 STT` per OS write transaction.
+- Fee recipient: `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
+- Fee-charged actions: policy creation, process creation, and process agent-step requests.
+
+Seeded capabilities:
+
+- `content.write`
+- `marketing.strategy`
+- `research.web`
+- `research.api`
+- `audit.code`
+- `treasury.plan`
+- `governance.draft`
+- `security.monitor`
+
+Verified post-deploy reads:
+
+- `ProtocolFeeVault.feeAmount()` returned `100000000000000000`.
+- `ProtocolFeeVault.feeRecipient()` returned `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
+- `CapabilityRegistry.getCapabilityCount()` returned `8`.
+- `ProcessManager.router()` returned `0x0e6A46564Aa6c004EBC9881D09515413842883b8`.
 
 ## Product Rules
 

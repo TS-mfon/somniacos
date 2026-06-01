@@ -205,5 +205,6 @@ export const defaultCapabilities = [
   { id: "research.api", label: "JSON API Research", mode: "JSON", somniaAgentId: "13174292974160097713", schemaURI: "somniacos://schema/research.api", active: true },
   { id: "audit.code", label: "Code Auditor", mode: "LLM", somniaAgentId: "12847293847561029384", schemaURI: "somniacos://schema/audit.code", active: true },
   { id: "treasury.plan", label: "Treasury Planner", mode: "LLM", somniaAgentId: "12847293847561029384", schemaURI: "somniacos://schema/treasury.plan", active: true },
-  { id: "governance.draft", label: "Governance Drafter", mode: "LLM", somniaAgentId: "12847293847561029384", schemaURI: "somniacos://schema/governance.draft", active: true }
+  { id: "governance.draft", label: "Governance Drafter", mode: "LLM", somniaAgentId: "12847293847561029384", schemaURI: "somniacos://schema/governance.draft", active: true },
+  { id: "security.monitor", label: "Security Monitor", mode: "LLM", somniaAgentId: "12847293847561029384", schemaURI: "somniacos://schema/security.monitor", active: true }
 ];
