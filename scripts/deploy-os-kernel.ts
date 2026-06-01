@@ -109,6 +109,7 @@ async function main() {
   const router = await deploy("SomniacAgentRouterV2", [
     "0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776",
     processManager.address,
+    autonomyPolicyRegistry.address,
     feeVault.address,
     12847293847561029384n,
     12875401142070969085n,
@@ -130,6 +131,12 @@ async function main() {
     "ProcessManager",
     processManager.address,
     "setRouter",
+    [router.address],
+  );
+  setupTransactions.AutonomyPolicyRegistrySetWorkflowCreator = await write(
+    "AutonomyPolicyRegistry",
+    autonomyPolicyRegistry.address,
+    "setWorkflowCreator",
     [router.address],
   );
 

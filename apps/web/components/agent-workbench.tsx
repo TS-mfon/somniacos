@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, http, parseEther, type Address, type Hash } from "viem";
+import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Address, type Hash } from "viem";
 import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, Loader2, RadioTower, X } from "lucide-react";
 import { useOnchainActivity } from "./live-economy";
 import { useSomniaWallet } from "./wallet-button";
-import { contracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterAbi } from "../lib/contracts";
-import { curatedAgents, matchOnchainAgent, readableAgentLabel, type AgentRunRecord } from "../lib/agent-engine";
+import { osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi } from "../lib/contracts";
+import { curatedAgents, matchOnchainAgent, readableAgentLabel, type AgentRunRecord, type CuratedAgent } from "../lib/agent-engine";
 import { summarizeError } from "../lib/onchain-state";
 
 const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
@@ -23,7 +23,32 @@ const modeLabels: Record<number, AgentRunRecord["mode"]> = {
   1: "Website"
 };
 
-type RunPhase = "idle" | "wallet" | "network" | "quote" | "signature" | "receipt" | "callback" | "success" | "failed";
+const capabilityByAgent: Record<string, string> = {
+  "marketing-strategist": "marketing.strategy",
+  "content-writer": "content.write",
+  "research-analyst": "research.web",
+  "code-auditor": "audit.code",
+  "security-auditor": "security.monitor",
+  "treasury-planner": "treasury.plan",
+  "governance-drafter": "governance.draft",
+  "negotiation-agent": "marketing.strategy",
+  "token-researcher": "research.web",
+  "wallet-risk-scanner": "security.monitor",
+  "defi-yield-scout": "treasury.plan",
+  "transaction-explainer": "research.web",
+  "portfolio-planner": "treasury.plan",
+  "airdrop-planner": "research.web",
+  "email-writer": "content.write",
+  "travel-planner": "research.web",
+  "study-tutor": "content.write",
+  "career-coach": "content.write",
+  "meeting-summarizer": "content.write",
+  "productivity-planner": "content.write"
+};
+
+const allCapabilities = ["content.write", "marketing.strategy", "research.web", "research.api", "audit.code", "treasury.plan", "governance.draft", "security.monitor"].map((item) => keccak256(toHex(item)));
+
+type RunPhase = "idle" | "wallet" | "network" | "quote" | "signature" | "receipt" | "agent" | "callback" | "success" | "failed";
 
 type WorkbenchTx = {
   phase: RunPhase;
@@ -33,14 +58,15 @@ type WorkbenchTx = {
   action?: string;
 };
 
-const activePhases = new Set<RunPhase>(["wallet", "network", "quote", "signature", "receipt", "callback"]);
+const activePhases = new Set<RunPhase>(["wallet", "network", "quote", "signature", "receipt", "agent", "callback"]);
 const statusSteps: Array<{ phase: RunPhase; label: string }> = [
   { phase: "wallet", label: "Wallet" },
   { phase: "network", label: "Network" },
-  { phase: "quote", label: "Deposit" },
+  { phase: "quote", label: "Fee quote" },
   { phase: "signature", label: "Signature" },
   { phase: "receipt", label: "Receipt" },
-  { phase: "callback", label: "Agent callback" },
+  { phase: "agent", label: "Agent output" },
+  { phase: "callback", label: "Somnia callback" },
   { phase: "success", label: "Result visible" }
 ];
 
@@ -48,8 +74,8 @@ export function AgentWorkbench() {
   const { data, state, reload } = useOnchainActivity(8000);
   const { wallet, connect, switchToSomnia, walletClient, refresh } = useSomniaWallet();
   const [agentId, setAgentId] = useState(curatedAgents[1].id);
-  const [goal, setGoal] = useState("Write an X post about dogs.");
-  const [constraints, setConstraints] = useState("Keep it warm, concise, and ready to publish.");
+  const [goal, setGoal] = useState(curatedAgents[1].defaultTask);
+  const [constraints, setConstraints] = useState(curatedAgents[1].defaultConstraints);
   const [webUrls, setWebUrls] = useState("");
   const [deposit, setDeposit] = useState<bigint | null>(null);
   const [quoteError, setQuoteError] = useState("");
@@ -63,30 +89,41 @@ export function AgentWorkbench() {
   const allUrls = useMemo(() => webUrls.split(/\s+/).map((url) => url.trim()).filter(Boolean), [webUrls]);
   const urls = useMemo(() => allUrls.slice(0, 3), [allUrls]);
   const mode = urls.length ? 1 : 0;
-  const routerConfigured = Boolean(contracts.SomniacAgentRouter);
+  const routerConfigured = osKernelEnabled && osKernelConfigured && Boolean(osContracts.SomniacAgentRouterV2);
   const isRunning = activePhases.has(tx.phase);
 
-  const completedFromEvents = useMemo(() => data.activity
-    .filter((item) => item.contract === "SomniacAgentRouter" && item.eventName === "AgentRunCompleted")
-    .map((item) => {
-      const args = item.args;
-      return {
-        requestId: String(args.requestId ?? ""),
-        user: String(args.user ?? ""),
-        appAgentId: String(args.appAgentId ?? ""),
-        task: "",
-        constraints: "",
-        url: "",
-        somniaAgentId: "",
-        mode: "LLM",
-        status: statusLabels[Number(args.status ?? 0)] ?? "Failed",
-        result: String(args.result ?? ""),
-        createdAt: "",
-        completedAt: item.blockNumber,
-        txHash: item.transactionHash
-      } satisfies AgentRunRecord;
-    })
-    .filter((item) => item.requestId && item.result), [data.activity]);
+  const completedFromEvents = useMemo(() => {
+    const requested = new Map<string, Record<string, unknown>>();
+    for (const item of data.activity) {
+      if (item.contract === "SomniacAgentRouterV2" && item.eventName === "OSAgentRunRequested") {
+        requested.set(String(item.args.requestId ?? ""), item.args);
+      }
+    }
+    return data.activity
+      .filter((item) => item.contract === "SomniacAgentRouterV2" && item.eventName === "OSAgentRunCompleted")
+      .map((item) => {
+        const args = item.args;
+        const requestId = String(args.requestId ?? "");
+        const request = requested.get(requestId) ?? {};
+        return {
+          requestId,
+          user: String(request.user ?? ""),
+          appAgentId: String(request.appAgentId ?? ""),
+          task: String(request.task ?? ""),
+          constraints: "",
+          url: String(request.url ?? ""),
+          somniaAgentId: String(request.somniaAgentId ?? ""),
+          mode: modeLabels[Number(request.mode ?? 0)] ?? "LLM",
+          status: statusLabels[Number(args.status ?? 0)] ?? "Failed",
+          result: String(args.result ?? ""),
+          source: "Somnia",
+          createdAt: "",
+          completedAt: item.blockNumber,
+          txHash: item.transactionHash
+        } satisfies AgentRunRecord;
+      })
+      .filter((item) => item.requestId && item.result);
+  }, [data.activity]);
 
   const anchoredResults = useMemo(() => {
     const seen = new Set<string>();
@@ -101,7 +138,10 @@ export function AgentWorkbench() {
 
   useEffect(() => {
     const param = new URLSearchParams(window.location.search).get("agent");
-    if (param) setAgentId(param);
+    if (param) {
+      const agent = curatedAgents.find((item) => item.id === param);
+      if (agent) applyAgent(agent);
+    }
     const stored = window.localStorage.getItem("somniacos.agentRuns");
     if (stored) {
       try {
@@ -122,9 +162,9 @@ export function AgentWorkbench() {
       try {
         setQuoteError("");
         const quoted = await publicClient.readContract({
-          address: contracts.SomniacAgentRouter as Address,
-          abi: somniacAgentRouterAbi,
-          functionName: "getRequiredDeposit",
+          address: osContracts.SomniacAgentRouterV2 as Address,
+          abi: somniacAgentRouterV2Abi,
+          functionName: "getTotalDue",
           args: [mode]
         });
         if (!cancelled) setDeposit(quoted as bigint);
@@ -168,67 +208,120 @@ export function AgentWorkbench() {
     };
   }, [pendingRuns, reload]);
 
+  function applyAgent(agent: CuratedAgent) {
+    setAgentId(agent.id);
+    setGoal(agent.defaultTask);
+    setConstraints(agent.defaultConstraints);
+    setWebUrls("");
+  }
+
   async function runAgent() {
     try {
       setTx({ phase: "wallet", status: "Checking wallet and task details" });
-      if (!routerConfigured) throw new Error("Somnia Agent router is not deployed yet.");
+      if (!routerConfigured) throw new Error("SomniacOS fee router is not deployed yet.");
       validateWorkbenchInput(goal, constraints, allUrls);
-      if (!wallet.address) {
-        await connect();
-        setTx({ phase: "idle", status: "Wallet connected. Click Run agent again to sign the Somnia request." });
-        return;
-      }
-      if (wallet.chainId !== somnia.id) {
-        setTx({ phase: "network", status: "Switching wallet to Somnia Shannon" });
-        await switchToSomnia();
-        await refresh(wallet.address);
-        setTx({ phase: "idle", status: "Network switched. Click Run agent again to sign the Somnia request." });
-        return;
-      }
-      setTx({ phase: "quote", status: "Checking Somnia Agent deposit" });
-      if (!deposit) throw new Error("Unable to quote the Somnia Agent deposit. Try again in a moment.");
+
+      const account = await ensureWalletReady();
+      setTx({ phase: "quote", status: "Checking Somnia agent fee plus 0.1 STT protocol fee" });
+      if (!deposit) throw new Error("Unable to quote the transaction. Try again in a moment.");
       if (wallet.balance && parseEther(wallet.balance) < deposit) throw new Error(`Insufficient STT. This request needs ${formatEther(deposit)} STT plus gas.`);
 
-      setTx({ phase: "signature", status: "Open your wallet and sign the Somnia Agent request" });
-      const client = createWalletClient({ chain: somnia, transport: walletClient() });
-      const hash = await client.sendTransaction({
-        account: wallet.address,
-        to: contracts.SomniacAgentRouter as Address,
-        value: deposit,
-        data: encodeFunctionData({
-          abi: somniacAgentRouterAbi,
-          functionName: "requestAgentRun",
-          args: [selected.id, goal.trim(), constraints.trim(), urls]
-        })
+      const capability = capabilityByAgent[selected.id] ?? "content.write";
+      const data = encodeFunctionData({
+        abi: somniacAgentRouterV2Abi,
+        functionName: "launchWorkflowAgentRun",
+        args: [
+          parseEther("5"),
+          6n,
+          1n,
+          true,
+          allCapabilities,
+          "somniacos://domains/open",
+          `${selected.role}: ${goal.trim()}`,
+          `somniacos://workflow/${selected.id}`,
+          keccak256(toHex(capability)),
+          selected.id,
+          goal.trim(),
+          constraints.trim(),
+          urls,
+          mode
+        ]
       });
+      const transaction = {
+        account,
+        to: osContracts.SomniacAgentRouterV2 as Address,
+        value: deposit,
+        data
+      } as const;
 
-      setTx({ phase: "receipt", status: "Request submitted. Waiting for Somnia receipt.", hash });
+      setTx({ phase: "signature", status: "Estimating gas and opening your wallet for one transaction" });
+      const gasEstimate = await publicClient.estimateGas(transaction);
+      const client = createWalletClient({ chain: somnia, transport: walletClient() });
+      const hash = await client.sendTransaction({ ...transaction, gas: bufferedGas(gasEstimate) });
+
+      setTx({ phase: "receipt", status: "Workflow submitted. Waiting for Somnia receipt.", hash });
       const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
       if (receipt.status !== "success") throw new Error("Somnia transaction reverted.");
 
       const requestId = extractRequestId(receipt.logs);
-      if (!requestId) throw new Error("Request submitted, but the router event was not found in the receipt.");
+      if (!requestId) throw new Error("Workflow submitted, but the OSAgentRunRequested event was not found in the receipt.");
 
-      setTx({ phase: "callback", status: `Somnia Agent request #${requestId} is running. Waiting for validator callback.`, hash });
+      setTx({ phase: "callback", status: `OS workflow request #${requestId} is running. Waiting for Somnia validator callback.`, hash });
       const initial = await readRun(requestId, hash);
       setActiveRun(initial);
       saveRun(initial);
 
-      const finalRun = await waitForRun(requestId, hash);
+      setTx({ phase: "agent", status: "Transaction signed. Running the specialist agent and preparing the result.", hash });
+      const finalRun = await executeAgent({
+        requestId,
+        hash,
+        account,
+        selected,
+        task: goal.trim(),
+        constraints: constraints.trim(),
+        urls,
+        modeLabel: modeLabels[mode] ?? "LLM"
+      });
       setActiveRun(finalRun);
       saveRun(finalRun);
       await reload();
-      await refresh(wallet.address);
+      await refresh(account);
 
       if (finalRun.status === "Success") {
-        setTx({ phase: "success", status: "Confirmed. The agent result is visible below.", hash });
+        setTx({ phase: "success", status: "Confirmed. The agent result is visible below and the protocol fee is recorded.", hash });
         setResultModal(finalRun);
       } else {
-        setTx({ phase: "failed", status: finalRun.status, hash, error: finalRun.result || "Somnia Agent did not return a usable result.", action: "Refresh later or run the task again." });
+        setTx({ phase: "callback", status: "LLM API did not return a result yet. Checking for Somnia callback.", hash });
+        const callbackRun = await waitForRun(requestId, hash);
+        setActiveRun(callbackRun);
+        saveRun(callbackRun);
+        if (callbackRun.status === "Success") {
+          setTx({ phase: "success", status: "Confirmed. The Somnia callback result is visible below.", hash });
+          setResultModal(callbackRun);
+        } else {
+          setTx({ phase: "failed", status: callbackRun.status, hash, error: callbackRun.result || "Somnia Agent did not return a usable result.", action: "Refresh later or run the task again." });
+        }
       }
     } catch (error) {
       setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
     }
+  }
+
+  async function ensureWalletReady() {
+    if (!window.ethereum) throw new Error("No injected wallet found.");
+    let accounts = await window.ethereum.request({ method: "eth_requestAccounts" }) as Address[];
+    if (!accounts[0]) {
+      await connect();
+      accounts = await window.ethereum.request({ method: "eth_requestAccounts" }) as Address[];
+    }
+    const account = accounts[0];
+    const chain = await window.ethereum.request({ method: "eth_chainId" }) as string;
+    if (Number.parseInt(chain, 16) !== somnia.id) {
+      setTx({ phase: "network", status: "Switching wallet to Somnia Shannon, then continuing automatically" });
+      await switchToSomnia();
+    }
+    await refresh(account);
+    return account;
   }
 
   function saveRun(item: AgentRunRecord) {
@@ -239,12 +332,14 @@ export function AgentWorkbench() {
     });
   }
 
+  const categories = Array.from(new Set(curatedAgents.map((agent) => agent.category)));
+
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
       <section className="panel rounded-[1.5rem] p-5 sm:p-6">
         <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Workbench</p>
-        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Run a real Somnia Agent.</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Choose a specialist, describe the task, sign one Somnia transaction, and wait for the agent callback. The result appears here only after the chain records it.</p>
+        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Run useful agents with one signed transaction.</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Pick a specialist, describe the task, and sign once. The transaction includes Somnia agent fees plus the 0.1 STT protocol fee, then the result appears after the onchain callback.</p>
         {data.ok === false ? (
           <div className="mt-5 rounded-2xl border border-ember/30 bg-ember/10 p-4 text-sm leading-6 text-ember">
             Onchain history is temporarily unavailable, but your local confirmed and pending agent runs are still shown below. {data.error}
@@ -253,8 +348,12 @@ export function AgentWorkbench() {
         <div className="mt-6 grid gap-4">
           <label className="block">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Specialist</span>
-            <select value={agentId} onChange={(event) => setAgentId(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
-              {curatedAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.role} - {agent.name}</option>)}
+            <select value={agentId} onChange={(event) => applyAgent(curatedAgents.find((agent) => agent.id === event.target.value) ?? curatedAgents[0])} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
+              {categories.map((category) => (
+                <optgroup key={category} label={category}>
+                  {curatedAgents.filter((agent) => agent.category === category).map((agent) => <option key={agent.id} value={agent.id}>{agent.role} - {agent.name}</option>)}
+                </optgroup>
+              ))}
             </select>
           </label>
           <label className="block">
@@ -268,23 +367,15 @@ export function AgentWorkbench() {
           <label className="block">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Website URLs optional</span>
             <textarea value={webUrls} onChange={(event) => setWebUrls(event.target.value)} placeholder="https://example.com" className="mt-2 min-h-16 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60" />
-            <span className="mt-2 block text-xs text-white/38">Add a full http:// or https:// URL when the agent should use Somnia&apos;s website parser. Leave blank for LLM inference.</span>
+            <span className="mt-2 block text-xs text-white/38">Add a full URL when the agent should use Somnia&apos;s website parser. Leave blank for LLM inference.</span>
           </label>
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Required STT</span>
+              <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">One transaction total</span>
               <span className="font-mono text-sm text-signal">{deposit ? `${Number(formatEther(deposit)).toFixed(4)} STT` : "Quoting..."}</span>
             </div>
-            <p className="mt-2 text-xs leading-5 text-white/45">{mode === 1 ? "Mode: LLM Parse Website" : "Mode: LLM Inference"} through the Somnia Agents platform.</p>
+            <p className="mt-2 text-xs leading-5 text-white/45">{mode === 1 ? "Mode: Website parser" : "Mode: LLM inference"} plus 0.1 STT protocol fee.</p>
             {quoteError ? <p className="mt-2 text-xs leading-5 text-ember">{quoteError}</p> : null}
-          </div>
-          <div className="rounded-2xl border border-signal/15 bg-signal/[0.04] p-4 text-xs leading-5 text-white/55">
-            You sign once. Somnia validators run the agent. The result appears here after the router receives the callback.
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/55">
-            <p className="font-mono uppercase tracking-[0.2em] text-white/35">OS mode</p>
-            <p className="mt-2">{osKernelEnabled && osKernelConfigured ? "For multi-step autonomous workflows, launch an OS process from Command Center and run agent steps with protocol-fee accounting." : "OS process mode is branch-gated until the new kernel contracts are deployed and configured."}</p>
-            <a href="/app/os" className="mt-3 inline-flex rounded-lg border border-signal/25 bg-signal/10 px-3 py-2 font-semibold text-signal">Open OS Command Center</a>
           </div>
           <button onClick={runAgent} disabled={isRunning} className="inline-flex items-center justify-center gap-2 rounded-xl bg-signal px-5 py-3 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60">
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RadioTower className="h-4 w-4" />}
@@ -295,7 +386,7 @@ export function AgentWorkbench() {
 
       <aside className="space-y-4">
         <div className="panel rounded-[1.5rem] p-5">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-signal">{selected.role}</p>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-signal">{selected.category} / {selected.role}</p>
           <h3 className="mt-3 text-3xl font-semibold text-white">{selected.name}</h3>
           <p className="mt-3 text-sm leading-6 text-white/55">{selected.promise}</p>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -310,49 +401,58 @@ export function AgentWorkbench() {
           {tx.hash ? <a href={`${somnia.blockExplorers.default.url}/tx/${tx.hash}`} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 break-all font-mono text-xs text-cobalt"><ExternalLink className="h-3 w-3" />{tx.hash}</a> : null}
           {tx.error ? <ErrorCallout message={tx.error} action={tx.action} /> : null}
           {activeRun ? <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 font-mono text-xs text-white/50">request #{activeRun.requestId} - {activeRun.status}</p> : null}
-          {pendingRuns.length ? <p className="mt-3 rounded-2xl border border-ember/25 bg-ember/10 p-3 text-xs leading-5 text-ember">{pendingRuns.length} request{pendingRuns.length === 1 ? "" : "s"} still running. Keep this page open or refresh later; SomniacOS will keep checking.</p> : null}
+          {pendingRuns.length ? <p className="mt-3 rounded-2xl border border-ember/25 bg-ember/10 p-3 text-xs leading-5 text-ember">{pendingRuns.length} request{pendingRuns.length === 1 ? "" : "s"} still running. Refresh later; pending requests are recovered from local storage and onchain reads.</p> : null}
         </div>
       </aside>
 
-      {latestResult ? (
-        <section className="xl:col-span-2 rounded-[1.5rem] border border-signal/25 bg-[linear-gradient(135deg,rgba(0,255,194,0.12),rgba(19,19,19,0.88))] p-5 shadow-[0_0_70px_rgba(0,255,194,0.10)] sm:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Latest result</p>
-              <h3 className="mt-2 text-3xl font-semibold text-white">{readableAgentLabel(latestResult.appAgentId)}</h3>
-            </div>
-            <span className="rounded-full border border-signal/30 bg-black/25 px-3 py-1 font-mono text-xs text-signal">request #{latestResult.requestId}</span>
-          </div>
-          {latestResult.task ? <p className="mt-3 text-sm text-white/48">{latestResult.task}</p> : null}
-          <p className="mt-4 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-7 text-white/82">{latestResult.result}</p>
-          {latestResult.txHash ? <a className="mt-4 inline-flex items-center gap-2 font-mono text-xs text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${latestResult.txHash}`} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" />View result transaction</a> : null}
-        </section>
-      ) : null}
-
-      <section className="xl:col-span-2 panel rounded-[1.5rem] p-5 sm:p-6">
-        <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Anchored results</p>
-        <h3 className="mt-3 text-3xl font-semibold text-white">Confirmed Somnia results</h3>
-        <div className="mt-4 grid gap-3">
-          {anchoredResults.slice(0, 8).map((item) => (
-            <article key={item.requestId} className="rounded-2xl border border-white/10 bg-[#101010] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h4 className="font-semibold text-white">{readableAgentLabel(item.appAgentId)}</h4>
-                <span className="font-mono text-xs text-signal">request #{item.requestId}</span>
-              </div>
-              {item.task ? <p className="mt-2 text-sm text-white/45">{item.task}</p> : null}
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-white/76">{item.result}</p>
-              <div className="mt-4 flex flex-wrap gap-3 font-mono text-xs text-white/38">
-                <span>{item.mode}</span>
-                {item.txHash ? <a className="text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${item.txHash}`} target="_blank" rel="noreferrer">tx</a> : null}
-              </div>
-            </article>
-          ))}
-          {!anchoredResults.length ? <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.02] p-6 text-sm text-white/48">No completed Somnia Agent results yet. Run an agent and wait for the callback. If the callback takes longer than expected, the request will stay visible as pending.</div> : null}
-        </div>
-      </section>
-
+      {latestResult ? <LatestResult run={latestResult} /> : null}
+      <AnchoredResults results={anchoredResults} />
       {resultModal ? <ResultModal run={resultModal} onClose={() => setResultModal(null)} /> : null}
     </div>
+  );
+}
+
+function LatestResult({ run }: { run: AgentRunRecord }) {
+  return (
+    <section className="xl:col-span-2 rounded-[1.5rem] border border-signal/25 bg-[linear-gradient(135deg,rgba(0,255,194,0.12),rgba(19,19,19,0.88))] p-5 shadow-[0_0_70px_rgba(0,255,194,0.10)] sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Latest result</p>
+          <h3 className="mt-2 text-3xl font-semibold text-white">{readableAgentLabel(run.appAgentId)}</h3>
+        </div>
+        <span className="rounded-full border border-signal/30 bg-black/25 px-3 py-1 font-mono text-xs text-signal">request #{run.requestId}</span>
+      </div>
+      {run.task ? <p className="mt-3 text-sm text-white/48">{run.task}</p> : null}
+      <p className="mt-4 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-7 text-white/82">{run.result}</p>
+      {run.txHash ? <a className="mt-4 inline-flex items-center gap-2 font-mono text-xs text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${run.txHash}`} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" />View transaction</a> : null}
+    </section>
+  );
+}
+
+function AnchoredResults({ results }: { results: AgentRunRecord[] }) {
+  return (
+    <section className="xl:col-span-2 panel rounded-[1.5rem] p-5 sm:p-6">
+      <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Anchored results</p>
+      <h3 className="mt-3 text-3xl font-semibold text-white">Confirmed Somnia results</h3>
+      <div className="mt-4 grid gap-3">
+        {results.slice(0, 8).map((item) => (
+          <article key={item.requestId} className="rounded-2xl border border-white/10 bg-[#101010] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h4 className="font-semibold text-white">{readableAgentLabel(item.appAgentId)}</h4>
+              <span className="font-mono text-xs text-signal">request #{item.requestId}</span>
+            </div>
+            {item.task ? <p className="mt-2 text-sm text-white/45">{item.task}</p> : null}
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-white/76">{item.result}</p>
+            <div className="mt-4 flex flex-wrap gap-3 font-mono text-xs text-white/38">
+          <span>{item.mode}</span>
+          {item.source ? <span>{item.source}</span> : null}
+          {item.txHash ? <a className="text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${item.txHash}`} target="_blank" rel="noreferrer">tx</a> : null}
+            </div>
+          </article>
+        ))}
+        {!results.length ? <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.02] p-6 text-sm text-white/48">No completed Somnia Agent results yet. Run an agent and wait for the callback.</div> : null}
+      </div>
+    </section>
   );
 }
 
@@ -409,8 +509,9 @@ function recommendedAction(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   if (message.includes("rejected") || message.includes("denied")) return "Nothing was submitted. Click Run agent again and approve the wallet prompt.";
   if (message.includes("insufficient") || message.includes("underfunded")) return "Add STT on Somnia Shannon, refresh the page, then retry.";
-  if (message.includes("chain") || message.includes("network")) return "Use the wallet button to switch to Somnia Shannon.";
-  if (message.includes("timeout") || message.includes("callback")) return "Keep the Workbench open or refresh later. Pending requests are recovered from local storage.";
+  if (message.includes("gas")) return "The app estimated gas explicitly. If your wallet still refuses, reload the page and try once more.";
+  if (message.includes("chain") || message.includes("network")) return "The app will switch to Somnia automatically. If your wallet blocks it, use the wallet network selector once.";
+  if (message.includes("timeout") || message.includes("callback")) return "Keep the Workbench open or refresh later. Pending requests are recovered from local storage and chain reads.";
   if (message.includes("url")) return "Fix the URL or remove it to use LLM mode.";
   return "Review the message above, then retry when corrected.";
 }
@@ -429,7 +530,7 @@ function ResultModal({ run, onClose }: { run: AgentRunRecord; onClose: () => voi
         <p className="mt-5 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-white/78">{run.result}</p>
         <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-white/45">
           <CheckCircle2 className="h-4 w-4 text-signal" />
-          <span>Stored by SomniacAgentRouter and visible in Anchored results.</span>
+          <span>Stored by SomniacOS fee router and visible in Anchored results.</span>
         </div>
       </section>
     </div>
@@ -438,10 +539,10 @@ function ResultModal({ run, onClose }: { run: AgentRunRecord; onClose: () => voi
 
 function extractRequestId(logs: readonly { address: Address; data: `0x${string}`; topics: readonly [`0x${string}`, ...`0x${string}`[]] | readonly [] }[]) {
   for (const log of logs) {
-    if (log.address.toLowerCase() !== contracts.SomniacAgentRouter.toLowerCase()) continue;
+    if (log.address.toLowerCase() !== osContracts.SomniacAgentRouterV2.toLowerCase()) continue;
     try {
-      const decoded = decodeEventLog({ abi: somniacAgentRouterAbi, data: log.data, topics: [...log.topics] });
-      if (decoded.eventName === "AgentRunRequested") return String((decoded.args as { requestId?: bigint }).requestId ?? "");
+      const decoded = decodeEventLog({ abi: somniacAgentRouterV2Abi, data: log.data, topics: [...log.topics] });
+      if (decoded.eventName === "OSAgentRunRequested") return String((decoded.args as { requestId?: bigint }).requestId ?? "");
     } catch {
       // Ignore non-router events in the same transaction.
     }
@@ -451,25 +552,94 @@ function extractRequestId(logs: readonly { address: Address; data: `0x${string}`
 
 async function readRun(requestId: string, txHash?: Hash): Promise<AgentRunRecord> {
   const run = await publicClient.readContract({
-    address: contracts.SomniacAgentRouter as Address,
-    abi: somniacAgentRouterAbi,
+    address: osContracts.SomniacAgentRouterV2 as Address,
+    abi: somniacAgentRouterV2Abi,
     functionName: "getRun",
     args: [BigInt(requestId)]
   }) as readonly unknown[];
   return {
     requestId,
-    user: String(run[0]),
-    appAgentId: String(run[1]),
-    task: String(run[2]),
-    constraints: String(run[3]),
-    url: String(run[4]),
-    somniaAgentId: String(run[5]),
-    mode: modeLabels[Number(run[6])] ?? "LLM",
-    status: statusLabels[Number(run[7])] ?? "Pending",
-    result: String(run[8]),
-    createdAt: String(run[9]),
-    completedAt: String(run[10]),
+    user: String(run[2]),
+    appAgentId: String(run[4]),
+    task: String(run[5]),
+    constraints: "",
+    url: String(run[6]),
+    somniaAgentId: String(run[7]),
+    mode: modeLabels[Number(run[8])] ?? "LLM",
+    status: statusLabels[Number(run[9])] ?? "Pending",
+    result: String(run[10]),
+    source: "Somnia",
+    createdAt: "",
+    completedAt: "",
     txHash
+  };
+}
+
+async function executeAgent({
+  requestId,
+  hash,
+  account,
+  selected,
+  task,
+  constraints,
+  urls,
+  modeLabel
+}: {
+  requestId: string;
+  hash: Hash;
+  account: Address;
+  selected: CuratedAgent;
+  task: string;
+  constraints: string;
+  urls: string[];
+  modeLabel: AgentRunRecord["mode"];
+}): Promise<AgentRunRecord> {
+  const response = await fetch("/api/agents/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agentId: selected.id,
+      task,
+      constraints,
+      urls,
+      requestId,
+      txHash: hash
+    })
+  });
+  const payload = await response.json() as { result?: string; source?: "LLM API"; error?: string };
+  if (!response.ok || !payload.result) {
+    return {
+      requestId,
+      user: account,
+      appAgentId: selected.id,
+      task,
+      constraints,
+      url: urls[0] ?? "",
+      somniaAgentId: "",
+      mode: modeLabel,
+      status: "Failed",
+      result: payload.error ?? "Agent execution failed.",
+      source: "LLM API",
+      createdAt: "",
+      completedAt: new Date().toISOString(),
+      txHash: hash
+    };
+  }
+  return {
+    requestId,
+    user: account,
+    appAgentId: selected.id,
+    task,
+    constraints,
+    url: urls[0] ?? "",
+    somniaAgentId: "",
+    mode: modeLabel,
+    status: "Success",
+    result: payload.result,
+    source: payload.source ?? "LLM API",
+    createdAt: "",
+    completedAt: new Date().toISOString(),
+    txHash: hash
   };
 }
 
@@ -481,4 +651,8 @@ async function waitForRun(requestId: string, txHash?: Hash) {
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
   throw new Error("Somnia Agent callback has not arrived yet. The request is still onchain; refresh the Workbench later.");
+}
+
+function bufferedGas(gas: bigint) {
+  return gas + gas / 5n + 25_000n;
 }

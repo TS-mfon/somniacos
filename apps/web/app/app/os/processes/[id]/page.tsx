@@ -4,6 +4,7 @@ import { ExternalLink } from "lucide-react";
 import { PageHero } from "../../../../../components/chrome";
 import { getOnchainActivity } from "../../../../../lib/server-onchain";
 import { buildOSProcesses } from "../../../../../lib/os-state";
+import { getOSProcessDirect } from "../../../../../lib/server-os";
 import { somnia } from "../../../../../lib/contracts";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function OSProcessPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const activity = await getOnchainActivity();
-  const process = buildOSProcesses(activity).find((item) => item.id === id);
+  const process = await getOSProcessDirect(id) ?? buildOSProcesses(activity).find((item) => item.id === id);
   if (!process) notFound();
 
   return (
@@ -29,7 +30,11 @@ export default async function OSProcessPage({ params }: { params: Promise<{ id: 
             <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Process lifecycle</p>
             <h2 className="mt-2 text-3xl font-semibold text-white">Agent callback proof</h2>
           </div>
-          <a href={`${somnia.blockExplorers.default.url}/tx/${process.tx}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 font-mono text-xs text-cobalt"><ExternalLink className="h-3 w-3" />creation tx</a>
+          {process.tx ? (
+            <a href={`${somnia.blockExplorers.default.url}/tx/${process.tx}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 font-mono text-xs text-cobalt"><ExternalLink className="h-3 w-3" />creation tx</a>
+          ) : (
+            <span className="font-mono text-xs text-white/35">Loaded from contract state</span>
+          )}
         </div>
         <div className="mt-5 grid gap-3">
           {process.steps.map((step) => (
@@ -46,7 +51,7 @@ export default async function OSProcessPage({ params }: { params: Promise<{ id: 
               <div className="mt-4 flex flex-wrap gap-3 font-mono text-xs">
                 <span className="text-white/38">{step.mode}</span>
                 {step.totalCost ? <span className="text-white/38">{step.totalCost}</span> : null}
-                <a href={`${somnia.blockExplorers.default.url}/tx/${step.tx}`} target="_blank" rel="noreferrer" className="text-cobalt">request tx</a>
+                {step.tx ? <a href={`${somnia.blockExplorers.default.url}/tx/${step.tx}`} target="_blank" rel="noreferrer" className="text-cobalt">request tx</a> : null}
                 {step.callbackTx ? <a href={`${somnia.blockExplorers.default.url}/tx/${step.callbackTx}`} target="_blank" rel="noreferrer" className="text-cobalt">callback tx</a> : null}
               </div>
             </article>

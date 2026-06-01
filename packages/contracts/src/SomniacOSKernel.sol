@@ -144,16 +144,36 @@ contract AutonomyPolicyRegistry {
     }
 
     ProtocolFeeVault public immutable feeVault;
+    address public owner;
+    address public workflowCreator;
     uint256 public nextPolicyId = 1;
     mapping(uint256 => Policy) public policies;
     mapping(uint256 => mapping(bytes32 => bool)) public allowedCapabilities;
 
     event PolicyCreated(uint256 indexed policyId, address indexed owner, uint256 maxSpend, uint256 maxSteps, uint256 maxRetries, bool allowChainedSteps, string allowedDomainsURI);
     event PolicyUpdated(uint256 indexed policyId, uint256 maxSpend, uint256 maxSteps, uint256 maxRetries, bool allowChainedSteps, string allowedDomainsURI);
+    event WorkflowCreatorUpdated(address indexed workflowCreator);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "not owner");
+        _;
+    }
+
+    modifier onlyWorkflowCreator() {
+        require(msg.sender == workflowCreator, "not workflow creator");
+        _;
+    }
 
     constructor(address feeVault_) {
         require(feeVault_ != address(0), "vault required");
         feeVault = ProtocolFeeVault(feeVault_);
+        owner = msg.sender;
+    }
+
+    function setWorkflowCreator(address workflowCreator_) external onlyOwner {
+        require(workflowCreator_ != address(0), "creator required");
+        workflowCreator = workflowCreator_;
+        emit WorkflowCreatorUpdated(workflowCreator_);
     }
 
     function createPolicy(uint256 maxSpend, uint256 maxSteps, uint256 maxRetries, bool allowChainedSteps, bytes32[] calldata capabilities_, string calldata allowedDomainsURI) external payable returns (uint256 policyId) {
@@ -163,6 +183,15 @@ contract AutonomyPolicyRegistry {
         policies[policyId] = Policy(msg.sender, maxSpend, maxSteps, maxRetries, allowChainedSteps, allowedDomainsURI, true);
         for (uint256 i = 0; i < capabilities_.length; i++) allowedCapabilities[policyId][capabilities_[i]] = true;
         emit PolicyCreated(policyId, msg.sender, maxSpend, maxSteps, maxRetries, allowChainedSteps, allowedDomainsURI);
+    }
+
+    function createPolicyFor(address policyOwner, uint256 maxSpend, uint256 maxSteps, uint256 maxRetries, bool allowChainedSteps, bytes32[] calldata capabilities_, string calldata allowedDomainsURI) external onlyWorkflowCreator returns (uint256 policyId) {
+        require(policyOwner != address(0), "owner required");
+        require(maxSteps > 0, "steps required");
+        policyId = nextPolicyId++;
+        policies[policyId] = Policy(policyOwner, maxSpend, maxSteps, maxRetries, allowChainedSteps, allowedDomainsURI, true);
+        for (uint256 i = 0; i < capabilities_.length; i++) allowedCapabilities[policyId][capabilities_[i]] = true;
+        emit PolicyCreated(policyId, policyOwner, maxSpend, maxSteps, maxRetries, allowChainedSteps, allowedDomainsURI);
     }
 
     function updatePolicy(uint256 policyId, uint256 maxSpend, uint256 maxSteps, uint256 maxRetries, bool allowChainedSteps, bytes32[] calldata capabilities_, string calldata allowedDomainsURI) external {
@@ -310,6 +339,18 @@ contract ProcessManager is Owned {
         emit ProcessCreated(processId, msg.sender, policyId, goal, metadataURI);
     }
 
+    function createProcessFor(address processOwner, string calldata goal, uint256 policyId, string calldata metadataURI) external onlyRouter returns (uint256 processId) {
+        require(processOwner != address(0), "owner required");
+        require(bytes(goal).length > 0, "goal required");
+        (address policyOwner,,,,,, bool active) = policies.policies(policyId);
+        require(active, "policy inactive");
+        require(policyOwner == processOwner, "not policy owner");
+
+        processId = nextProcessId++;
+        processes[processId] = Process(processOwner, goal, policyId, ProcessStatus.Created, 0, 0, block.timestamp, block.timestamp, "", "");
+        emit ProcessCreated(processId, processOwner, policyId, goal, metadataURI);
+    }
+
     function registerStep(
         address caller,
         uint256 processId,
@@ -448,6 +489,7 @@ contract SomniacAgentRouterV2 is Owned {
 
     ISomniaAgentPlatformV2 public immutable platform;
     ProcessManager public immutable processManager;
+    AutonomyPolicyRegistry public immutable policies;
     ProtocolFeeVault public immutable feeVault;
     uint256 public immutable llmAgentId;
     uint256 public immutable websiteAgentId;
@@ -466,6 +508,7 @@ contract SomniacAgentRouterV2 is Owned {
     constructor(
         address platform_,
         address processManager_,
+        address policies_,
         address feeVault_,
         uint256 llmAgentId_,
         uint256 websiteAgentId_,
@@ -475,10 +518,11 @@ contract SomniacAgentRouterV2 is Owned {
         uint256 websitePricePerAgent_,
         uint256 jsonPricePerAgent_
     ) {
-        require(platform_ != address(0) && processManager_ != address(0) && feeVault_ != address(0), "dependency required");
+        require(platform_ != address(0) && processManager_ != address(0) && policies_ != address(0) && feeVault_ != address(0), "dependency required");
         require(subcommitteeSize_ > 0, "subcommittee required");
         platform = ISomniaAgentPlatformV2(platform_);
         processManager = ProcessManager(processManager_);
+        policies = AutonomyPolicyRegistry(policies_);
         feeVault = ProtocolFeeVault(feeVault_);
         llmAgentId = llmAgentId_;
         websiteAgentId = websiteAgentId_;
@@ -498,6 +542,62 @@ contract SomniacAgentRouterV2 is Owned {
 
     function getTotalDue(RunMode mode) external view returns (uint256) {
         return getRequiredDeposit(mode) + feeVault.feeAmount();
+    }
+
+    function getRun(uint256 requestId) external view returns (
+        uint256 processId,
+        uint256 stepId,
+        address user,
+        bytes32 capabilityId,
+        string memory appAgentId,
+        string memory task,
+        string memory url,
+        uint256 somniaAgentId,
+        RunMode mode,
+        RunStatus status,
+        string memory result
+    ) {
+        RouterRun storage run = runs[requestId];
+        return (run.processId, run.stepId, run.user, run.capabilityId, run.appAgentId, run.task, run.url, run.somniaAgentId, run.mode, run.status, run.result);
+    }
+
+    function launchWorkflowAgentRun(
+        uint256 maxSpend,
+        uint256 maxSteps,
+        uint256 maxRetries,
+        bool allowChainedSteps,
+        bytes32[] calldata allowedCapabilities,
+        string calldata allowedDomainsURI,
+        string calldata processGoal,
+        string calldata processMetadataURI,
+        bytes32 capabilityId,
+        string calldata appAgentId,
+        string calldata task,
+        string calldata constraints,
+        string[] calldata urls,
+        RunMode mode
+    ) external payable returns (uint256 processId, uint256 requestId) {
+        require(bytes(processGoal).length > 0, "goal required");
+        require(bytes(appAgentId).length > 0, "agent required");
+        require(bytes(task).length > 0, "task required");
+        require(bytes(task).length <= 2800, "task too large");
+        require(bytes(constraints).length <= 1600, "constraints too large");
+        require(urls.length <= 3, "too many urls");
+
+        uint256 deposit = getRequiredDeposit(mode);
+        uint256 fee = feeVault.feeAmount();
+        require(msg.value >= deposit + fee, "underfunded");
+
+        uint256 policyId = policies.createPolicyFor(msg.sender, maxSpend, maxSteps, maxRetries, allowChainedSteps, allowedCapabilities, allowedDomainsURI);
+        processId = processManager.createProcessFor(msg.sender, processGoal, policyId, processMetadataURI);
+        feeVault.payFee{value: fee}(msg.sender, "workflow.run", processId, 0);
+
+        requestId = _requestAgent(processId, capabilityId, appAgentId, task, constraints, urls, mode, deposit, fee);
+
+        if (msg.value > deposit + fee) {
+            (bool ok,) = payable(msg.sender).call{value: msg.value - deposit - fee}("");
+            require(ok, "refund failed");
+        }
     }
 
     function requestProcessAgentRun(
@@ -520,6 +620,25 @@ contract SomniacAgentRouterV2 is Owned {
         require(msg.value >= deposit + fee, "underfunded");
         feeVault.payFee{value: fee}(msg.sender, "process.step", processId, 0);
 
+        requestId = _requestAgent(processId, capabilityId, appAgentId, task, constraints, urls, mode, deposit, fee);
+
+        if (msg.value > deposit + fee) {
+            (bool ok,) = payable(msg.sender).call{value: msg.value - deposit - fee}("");
+            require(ok, "refund failed");
+        }
+    }
+
+    function _requestAgent(
+        uint256 processId,
+        bytes32 capabilityId,
+        string calldata appAgentId,
+        string calldata task,
+        string calldata constraints,
+        string[] calldata urls,
+        RunMode mode,
+        uint256 deposit,
+        uint256 fee
+    ) private returns (uint256 requestId) {
         uint256 somniaAgentId = _agentIdForMode(mode);
         string memory sourceUrl = urls.length > 0 ? urls[0] : "";
         bytes memory payload = _payloadForMode(mode, appAgentId, task, constraints, sourceUrl);
@@ -530,11 +649,6 @@ contract SomniacAgentRouterV2 is Owned {
         runs[requestId] = RouterRun(processId, stepId, msg.sender, capabilityId, appAgentId, task, sourceUrl, somniaAgentId, mode, RunStatus.Pending, "");
 
         emit OSAgentRunRequested(processId, stepId, requestId, msg.sender, capabilityId, appAgentId, somniaAgentId, mode, task, sourceUrl, deposit, fee);
-
-        if (msg.value > deposit + fee) {
-            (bool ok,) = payable(msg.sender).call{value: msg.value - deposit - fee}("");
-            require(ok, "refund failed");
-        }
     }
 
     function handleResponse(uint256 requestId, Response[] memory responses, ResponseStatus status, Request memory) external {

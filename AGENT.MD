@@ -13,6 +13,87 @@ SomniacOS is a fresh monorepo at `/home/sudodave/somniacos`. It is not a retrofi
 - Live alias verified: `https://somniacos.vercel.app`
 - Live API verified: `https://somniacos.vercel.app/api/onchain/activity` returned `ok: true`, block `392993994`, and `32` decoded real Somnia contract events, including `AgentRunCompleted` callback outputs.
 
+## 2026-06-01 Agentic OS Kernel Update
+
+Branch: `feature/agentic-os-kernel`
+
+This pass implements the one-transaction OS workflow requested after the revenue/gas/OS persistence issues:
+
+- `Run agent` now sends one wallet-signed transaction to `SomniacAgentRouterV2.launchWorkflowAgentRun`.
+- That one transaction creates the autonomy policy, creates the OS process, pays the `0.1 STT` protocol fee, deposits the Somnia agent fee, and requests the Somnia agent run.
+- The UI no longer asks the user to deploy/create agents for normal use.
+- The visible navigation is reduced to Agents, Workbench, OS, and Revenue; the Capabilities UI was removed/redirected.
+- The OS process list and process detail pages now read direct contract state from `ProcessManager` first, so process data persists after refresh even when recent event windows move.
+- The Revenue page reads `ProtocolFeeVault.totalCollected`, `feeAmount`, and `feeRecipient` directly from the deployed fee vault, so protocol fee totals update after real transactions.
+- The revenue wallet is `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
+- Gas handling was changed to explicitly estimate gas and submit a buffered gas limit, reducing the wallet gas-limit failure where users had to switch away and back manually.
+- The Workbench now runs a real server-side specialist agent after the signed Somnia transaction. It prefers `OPENAI_API_KEY` when configured, and currently falls back to a public LLM endpoint because Vercel has no environment variables set.
+- The server-side agent route also fetches up to three user-provided URLs and passes extracted reference text into the specialist prompt, enabling the requested web-fetch behavior.
+- Agent results are displayed immediately in the modal and `Anchored results` after the signed OS transaction. Somnia callback results are still read and preferred when the onchain callback arrives.
+
+New OS kernel deployment on Somnia Shannon:
+
+- ProtocolFeeVault: `0xfd74c336792dd54862e6694bb76ff865aac06cf0`
+- CapabilityRegistry: `0xbf5163d30a914d907be2fb9973940668e404127e`
+- AutonomyPolicyRegistry: `0x36f5e0b1d305255eeca1b39583239fdac59c3318`
+- MemoryLedger: `0x051c953d7a28a0f6d1738f238ad4bea3454312a8`
+- ProcessManager: `0xa345c95ce5d3b5b2e12d6cee31b1289865b7456a`
+- SomniacAgentRouterV2: `0xe426357cc73f67efa9bc5741b4875a6a52a55c99`
+
+Deployment transactions:
+
+- ProtocolFeeVault: `0x6b2b714ff52034ba88cfac53aa3772e80256e7171be3c5e686303db662650a33`
+- CapabilityRegistry: `0xf44947cadba3f9bceaaa6dc5cd31aec41ad1ee91290058a2acb2d4c95d640e5f`
+- AutonomyPolicyRegistry: `0x65638c8351d4b9fa9f5062b9c40fcfc205168f926522ee148c6efe2832877d38`
+- MemoryLedger: `0xdc23a287e08c076cf46ec7fed5f494d7ef2a7710cd145d20273eb795274ebf6c`
+- ProcessManager: `0xec9cb020bb625cd5718451c68cf2402412389a1c63ae6b49a75f6f5c379afa63`
+- SomniacAgentRouterV2: `0x0b0ab361d3f8b42821966ac0a214193323f32f762bd9df78a2ea4c969afddaa9`
+- ProcessManager.setRouter: `0xc94409622c07c23fd70dd147dfae60651fc7beb27c1dcb23450da1373d0b279d`
+- AutonomyPolicyRegistry.setWorkflowCreator: `0x178777ba1c623d416168d95d49ff0e14475967c767d8357a296d479fe15e9489`
+
+Verified onchain reads:
+
+- `ProtocolFeeVault.feeRecipient()` returned `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
+- `ProtocolFeeVault.feeAmount()` returned `100000000000000000` (`0.1 STT`).
+- `SomniacAgentRouterV2.getTotalDue(0)` returned `340000000000000000` (`0.34 STT` total for LLM mode: `0.24 STT` Somnia agent deposit plus `0.1 STT` protocol fee).
+- `AutonomyPolicyRegistry.workflowCreator()` returned `0xe426357CC73F67efa9bC5741b4875a6a52a55c99`.
+
+Seeded real OS activity:
+
+- Workflow tx: `0xdfe2b7d513ab1f656a5d374008225864ea51d8ea8ec3206a390275457009c80a`
+- Process ID: `1`
+- Step ID: `1`
+- Request ID: `3788699`
+- `ProcessManager.nextProcessId()` returned `2` after seeding.
+- `ProtocolFeeVault.totalCollected()` returned `100000000000000000` after seeding.
+
+Verification completed in this pass:
+
+```bash
+forge test
+pnpm --filter @somniacos/web typecheck
+pnpm --filter @somniacos/web build
+curl -sS "https://text.pollinations.ai/Write%20one%20short%20sentence%20about%20dogs"
+```
+
+Vercel deployment completed:
+
+- Preview deployment: `https://somniacos-rnlw57b5l-gen-daves-projects.vercel.app` (`dpl_EYDCTN83YtUfw4SttAsSAwgjw7th`). Preview is protected by Vercel authentication.
+- Production deployment: `https://somniacos-dwin5tt0u-gen-daves-projects.vercel.app` (`dpl_34AC27zxDU5HupNPfeoPhq5Gbktg`).
+- Public alias: `https://somniacos.vercel.app`.
+
+Production verification completed:
+
+- `curl -I https://somniacos.vercel.app` returned HTTP `200`.
+- `https://somniacos.vercel.app/api/os/revenue` returned direct contract revenue with `totalFees: 0.1000 STT`, `feeAmount: 0.1000 STT`, and fee recipient `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
+- `https://somniacos.vercel.app/api/os/processes` returned `source: contract` with seeded process `#1`, request `3788699`, and `feesPaid: 0.3400 STT`.
+- `POST https://somniacos.vercel.app/api/agents/run` returned a live LLM result for a dog X post using provider `pollinations`.
+
+Current caveat:
+
+- The new Workbench output path is real LLM execution, but because the Vercel project currently has no `OPENAI_API_KEY`, it uses the public fallback provider. For stronger reliability, add `OPENAI_API_KEY` and optionally `OPENAI_MODEL` to Vercel.
+- The Somnia Agent callback for the seeded `SomniacAgentRouterV2` workflow had not completed at handoff time; direct process state correctly shows the pending request.
+
 ## Somnia Deployment
 
 Network: Somnia Shannon Testnet

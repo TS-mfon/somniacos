@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { PageHero } from "../../../../components/chrome";
 import { OSCommandCenter } from "../../../../components/os-command-center";
 
@@ -29,7 +28,6 @@ export default function OSCompanyPage() {
               </div>
             ))}
           </div>
-          <Link href="/app/os/capabilities" className="mt-5 inline-flex rounded-xl border border-signal/25 bg-signal/10 px-4 py-2 text-sm font-semibold text-signal">View installed capabilities</Link>
         </section>
         <OSCommandCenter />
       </div>

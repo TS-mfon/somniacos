@@ -193,7 +193,7 @@ export function buildOSRevenue(activity: ActivityItem[]) {
     totalFees: `${Number(formatEther(total)).toFixed(4)} STT`,
     eventCount: events.length,
     feeAmount: `${Number(formatEther(parseEther("0.1"))).toFixed(4)} STT`,
-    feeRecipient: osContracts.ProtocolFeeVault,
+    feeRecipient: "0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E",
     events
   } satisfies OSRevenue;
 }

@@ -3,12 +3,13 @@ import { PageHero } from "../../../../components/chrome";
 import { getOnchainActivity } from "../../../../lib/server-onchain";
 import { buildOSRevenue } from "../../../../lib/os-state";
 import { somnia } from "../../../../lib/contracts";
+import { getOSRevenueDirect } from "../../../../lib/server-os";
 
 export const dynamic = "force-dynamic";
 
 export default async function OSRevenuePage() {
   const activity = await getOnchainActivity();
-  const revenue = buildOSRevenue(activity);
+  const revenue = { ...buildOSRevenue(activity), ...(await getOSRevenueDirect()) };
 
   return (
     <>

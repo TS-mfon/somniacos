@@ -31,12 +31,12 @@ export const contracts = {
 export const zeroAddress = "0x0000000000000000000000000000000000000000";
 
 export const osContracts = {
-  ProtocolFeeVault: process.env.NEXT_PUBLIC_PROTOCOL_FEE_VAULT ?? "0x46ef146089c726fefb039fc13de3915b38588f52",
-  CapabilityRegistry: process.env.NEXT_PUBLIC_CAPABILITY_REGISTRY ?? "0xe9e9d7a274528d2b055ade9c5f4b7f9df639e2f7",
-  AutonomyPolicyRegistry: process.env.NEXT_PUBLIC_AUTONOMY_POLICY_REGISTRY ?? "0x4a38251e67229438235b0999ceb086cb2987b55c",
-  ProcessManager: process.env.NEXT_PUBLIC_PROCESS_MANAGER ?? "0x5425a0fbb13e860737d56999e21ed14e1adbb142",
-  MemoryLedger: process.env.NEXT_PUBLIC_MEMORY_LEDGER ?? "0xd64faee84313f7564e7dc7655088c3b4a4263cfb",
-  SomniacAgentRouterV2: process.env.NEXT_PUBLIC_SOMNIAC_AGENT_ROUTER_V2 ?? "0x0e6a46564aa6c004ebc9881d09515413842883b8"
+  ProtocolFeeVault: process.env.NEXT_PUBLIC_PROTOCOL_FEE_VAULT ?? "0xfd74c336792dd54862e6694bb76ff865aac06cf0",
+  CapabilityRegistry: process.env.NEXT_PUBLIC_CAPABILITY_REGISTRY ?? "0xbf5163d30a914d907be2fb9973940668e404127e",
+  AutonomyPolicyRegistry: process.env.NEXT_PUBLIC_AUTONOMY_POLICY_REGISTRY ?? "0x36f5e0b1d305255eeca1b39583239fdac59c3318",
+  ProcessManager: process.env.NEXT_PUBLIC_PROCESS_MANAGER ?? "0xa345c95ce5d3b5b2e12d6cee31b1289865b7456a",
+  MemoryLedger: process.env.NEXT_PUBLIC_MEMORY_LEDGER ?? "0x051c953d7a28a0f6d1738f238ad4bea3454312a8",
+  SomniacAgentRouterV2: process.env.NEXT_PUBLIC_SOMNIAC_AGENT_ROUTER_V2 ?? "0xe426357cc73f67efa9bc5741b4875a6a52a55c99"
 } as const;
 
 export const osKernelEnabled = process.env.NEXT_PUBLIC_ENABLE_OS_KERNEL !== "false";
@@ -153,12 +153,17 @@ export const capabilityRegistryAbi = [
 ] as const;
 
 export const autonomyPolicyRegistryAbi = [
+  { type: "function", name: "setWorkflowCreator", stateMutability: "nonpayable", inputs: [{ name: "workflowCreator_", type: "address" }], outputs: [] },
   { type: "function", name: "createPolicy", stateMutability: "payable", inputs: [{ name: "maxSpend", type: "uint256" }, { name: "maxSteps", type: "uint256" }, { name: "maxRetries", type: "uint256" }, { name: "allowChainedSteps", type: "bool" }, { name: "capabilities_", type: "bytes32[]" }, { name: "allowedDomainsURI", type: "string" }], outputs: [{ name: "policyId", type: "uint256" }] },
   { type: "event", name: "PolicyCreated", inputs: [{ indexed: true, name: "policyId", type: "uint256" }, { indexed: true, name: "owner", type: "address" }, { indexed: false, name: "maxSpend", type: "uint256" }, { indexed: false, name: "maxSteps", type: "uint256" }, { indexed: false, name: "maxRetries", type: "uint256" }, { indexed: false, name: "allowChainedSteps", type: "bool" }, { indexed: false, name: "allowedDomainsURI", type: "string" }] },
-  { type: "event", name: "PolicyUpdated", inputs: [{ indexed: true, name: "policyId", type: "uint256" }, { indexed: false, name: "maxSpend", type: "uint256" }, { indexed: false, name: "maxSteps", type: "uint256" }, { indexed: false, name: "maxRetries", type: "uint256" }, { indexed: false, name: "allowChainedSteps", type: "bool" }, { indexed: false, name: "allowedDomainsURI", type: "string" }] }
+  { type: "event", name: "PolicyUpdated", inputs: [{ indexed: true, name: "policyId", type: "uint256" }, { indexed: false, name: "maxSpend", type: "uint256" }, { indexed: false, name: "maxSteps", type: "uint256" }, { indexed: false, name: "maxRetries", type: "uint256" }, { indexed: false, name: "allowChainedSteps", type: "bool" }, { indexed: false, name: "allowedDomainsURI", type: "string" }] },
+  { type: "event", name: "WorkflowCreatorUpdated", inputs: [{ indexed: true, name: "workflowCreator", type: "address" }] }
 ] as const;
 
 export const processManagerAbi = [
+  { type: "function", name: "nextProcessId", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "processes", stateMutability: "view", inputs: [{ name: "", type: "uint256" }], outputs: [{ name: "owner", type: "address" }, { name: "goal", type: "string" }, { name: "policyId", type: "uint256" }, { name: "status", type: "uint8" }, { name: "spent", type: "uint256" }, { name: "stepCount", type: "uint256" }, { name: "createdAt", type: "uint256" }, { name: "updatedAt", type: "uint256" }, { name: "resultURI", type: "string" }, { name: "finalSummary", type: "string" }] },
+  { type: "function", name: "steps", stateMutability: "view", inputs: [{ name: "", type: "uint256" }, { name: "", type: "uint256" }], outputs: [{ name: "processId", type: "uint256" }, { name: "capabilityId", type: "bytes32" }, { name: "appAgentId", type: "string" }, { name: "somniaAgentId", type: "uint256" }, { name: "requestId", type: "uint256" }, { name: "mode", type: "uint8" }, { name: "status", type: "uint8" }, { name: "prompt", type: "string" }, { name: "url", type: "string" }, { name: "result", type: "string" }, { name: "createdAt", type: "uint256" }, { name: "completedAt", type: "uint256" }] },
   { type: "function", name: "createProcess", stateMutability: "payable", inputs: [{ name: "goal", type: "string" }, { name: "policyId", type: "uint256" }, { name: "metadataURI", type: "string" }], outputs: [{ name: "processId", type: "uint256" }] },
   { type: "function", name: "completeProcess", stateMutability: "nonpayable", inputs: [{ name: "processId", type: "uint256" }, { name: "finalSummary", type: "string" }, { name: "resultURI", type: "string" }], outputs: [] },
   { type: "event", name: "ProcessCreated", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "owner", type: "address" }, { indexed: true, name: "policyId", type: "uint256" }, { indexed: false, name: "goal", type: "string" }, { indexed: false, name: "metadataURI", type: "string" }] },
@@ -179,7 +184,9 @@ export const memoryLedgerAbi = [
 export const somniacAgentRouterV2Abi = [
   { type: "function", name: "getRequiredDeposit", stateMutability: "view", inputs: [{ name: "mode", type: "uint8" }], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "getTotalDue", stateMutability: "view", inputs: [{ name: "mode", type: "uint8" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "getRun", stateMutability: "view", inputs: [{ name: "requestId", type: "uint256" }], outputs: [{ name: "processId", type: "uint256" }, { name: "stepId", type: "uint256" }, { name: "user", type: "address" }, { name: "capabilityId", type: "bytes32" }, { name: "appAgentId", type: "string" }, { name: "task", type: "string" }, { name: "url", type: "string" }, { name: "somniaAgentId", type: "uint256" }, { name: "mode", type: "uint8" }, { name: "status", type: "uint8" }, { name: "result", type: "string" }] },
   { type: "function", name: "requestProcessAgentRun", stateMutability: "payable", inputs: [{ name: "processId", type: "uint256" }, { name: "capabilityId", type: "bytes32" }, { name: "appAgentId", type: "string" }, { name: "task", type: "string" }, { name: "constraints", type: "string" }, { name: "urls", type: "string[]" }, { name: "mode", type: "uint8" }], outputs: [{ name: "requestId", type: "uint256" }] },
+  { type: "function", name: "launchWorkflowAgentRun", stateMutability: "payable", inputs: [{ name: "maxSpend", type: "uint256" }, { name: "maxSteps", type: "uint256" }, { name: "maxRetries", type: "uint256" }, { name: "allowChainedSteps", type: "bool" }, { name: "allowedCapabilities", type: "bytes32[]" }, { name: "allowedDomainsURI", type: "string" }, { name: "processGoal", type: "string" }, { name: "processMetadataURI", type: "string" }, { name: "capabilityId", type: "bytes32" }, { name: "appAgentId", type: "string" }, { name: "task", type: "string" }, { name: "constraints", type: "string" }, { name: "urls", type: "string[]" }, { name: "mode", type: "uint8" }], outputs: [{ name: "processId", type: "uint256" }, { name: "requestId", type: "uint256" }] },
   { type: "event", name: "OSAgentRunRequested", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: true, name: "requestId", type: "uint256" }, { indexed: false, name: "user", type: "address" }, { indexed: false, name: "capabilityId", type: "bytes32" }, { indexed: false, name: "appAgentId", type: "string" }, { indexed: false, name: "somniaAgentId", type: "uint256" }, { indexed: false, name: "mode", type: "uint8" }, { indexed: false, name: "task", type: "string" }, { indexed: false, name: "url", type: "string" }, { indexed: false, name: "deposit", type: "uint256" }, { indexed: false, name: "protocolFee", type: "uint256" }] },
   { type: "event", name: "OSAgentRunCompleted", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: true, name: "requestId", type: "uint256" }, { indexed: false, name: "status", type: "uint8" }, { indexed: false, name: "result", type: "string" }] }
 ] as const;

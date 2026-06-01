@@ -3,19 +3,21 @@ import { PageHero } from "../../../components/chrome";
 import { OSCommandCenter } from "../../../components/os-command-center";
 import { getOnchainActivity } from "../../../lib/server-onchain";
 import { buildOSProcesses, buildOSRevenue, osAvailable } from "../../../lib/os-state";
+import { getOSProcessesDirect, getOSRevenueDirect } from "../../../lib/server-os";
 
 export const dynamic = "force-dynamic";
 
 export default async function OSPage() {
   const activity = await getOnchainActivity();
-  const processes = buildOSProcesses(activity);
-  const revenue = buildOSRevenue(activity);
+  const directProcesses = await getOSProcessesDirect();
+  const processes = directProcesses.length ? directProcesses : buildOSProcesses(activity);
+  const revenue = { ...buildOSRevenue(activity), ...(await getOSRevenueDirect()) };
   const completed = processes.filter((item) => item.status === "Completed").length;
   const active = processes.filter((item) => ["Created", "Running", "Waiting"].includes(item.status)).length;
 
   return (
     <>
-      <PageHero title="SomniacOS Kernel" eyebrow="Agentic operating system">Launch autonomous processes, track Somnia Agent callbacks, enforce budgets, and collect transparent protocol fees.</PageHero>
+      <PageHero title="SomniacOS Kernel" eyebrow="Agentic operating system">An OS process is a persistent onchain agent workflow: one signature creates the budget, starts a Somnia Agent task, stores the callback, and keeps the result visible after refresh.</PageHero>
       {!osAvailable() ? <KernelNotice /> : null}
       <div className="grid gap-4 md:grid-cols-4">
         <Metric label="Processes" value={String(processes.length)} />
@@ -39,7 +41,7 @@ export default async function OSPage() {
                 <p className="mt-2 font-mono text-xs text-white/35">{process.steps.length} steps | {process.feesPaid} fees</p>
               </Link>
             ))}
-            {!processes.length ? <p className="rounded-2xl border border-dashed border-white/12 p-5 text-sm text-white/45">No OS processes indexed yet. Deploy the kernel contracts, seed capabilities, then launch the demo company process.</p> : null}
+            {!processes.length ? <p className="rounded-2xl border border-dashed border-white/12 p-5 text-sm text-white/45">No OS processes yet. Run the workflow below; it will create a process and immediately start the first agent step.</p> : null}
           </div>
         </section>
       </div>
