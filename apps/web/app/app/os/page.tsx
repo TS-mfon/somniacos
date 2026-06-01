@@ -4,6 +4,8 @@ import { OSCommandCenter } from "../../../components/os-command-center";
 import { getOnchainActivity } from "../../../lib/server-onchain";
 import { buildOSProcesses, buildOSRevenue, osAvailable } from "../../../lib/os-state";
 
+export const dynamic = "force-dynamic";
+
 export default async function OSPage() {
   const activity = await getOnchainActivity();
   const processes = buildOSProcesses(activity);

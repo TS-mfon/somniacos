@@ -4,6 +4,8 @@ import { getOnchainActivity } from "../../../../lib/server-onchain";
 import { buildOSRevenue } from "../../../../lib/os-state";
 import { somnia } from "../../../../lib/contracts";
 
+export const dynamic = "force-dynamic";
+
 export default async function OSRevenuePage() {
   const activity = await getOnchainActivity();
   const revenue = buildOSRevenue(activity);

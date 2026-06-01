@@ -2,6 +2,8 @@ import { PageHero } from "../../../../components/chrome";
 import { getOnchainActivity } from "../../../../lib/server-onchain";
 import { buildOSCapabilities, defaultCapabilities } from "../../../../lib/os-state";
 
+export const dynamic = "force-dynamic";
+
 export default async function OSCapabilitiesPage() {
   const activity = await getOnchainActivity();
   const onchain = buildOSCapabilities(activity);
