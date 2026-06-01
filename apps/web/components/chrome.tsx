@@ -4,7 +4,10 @@ import { WalletButton } from "./wallet-button";
 
 const navItems = [
   ["Agents", "/app/agents"],
-  ["Workbench", "/app/agent-workbench"]
+  ["Workbench", "/app/agent-workbench"],
+  ["OS", "/app/os"],
+  ["Capabilities", "/app/os/capabilities"],
+  ["Revenue", "/app/os/revenue"]
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {

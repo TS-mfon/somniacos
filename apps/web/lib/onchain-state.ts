@@ -4,7 +4,7 @@ export type ActivityItem = {
   contractAddress: string;
   eventName: string;
   title: string;
-  args: Record<string, string | number | boolean>;
+  args: Record<string, unknown>;
   value?: string;
   transactionHash: string;
   blockNumber: string;

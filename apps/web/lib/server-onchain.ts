@@ -1,5 +1,5 @@
 import { createPublicClient, decodeEventLog, formatEther, http, type Abi, type Address, type Hash, type TransactionReceipt } from "viem";
-import { contractCatalog, somnia } from "./contracts";
+import { fullContractCatalog, somnia } from "./contracts";
 
 export const publicClient = createPublicClient({
   chain: somnia,
@@ -32,7 +32,28 @@ const eventLabels: Record<string, string> = {
   PartnershipCreated: "Partnership created",
   WorldEventRecorded: "World event recorded",
   AgentRunRequested: "Somnia Agent requested",
-  AgentRunCompleted: "Somnia Agent completed"
+  AgentRunCompleted: "Somnia Agent completed",
+  ProtocolFeePaid: "Protocol fee paid",
+  FeeRecipientUpdated: "Fee recipient updated",
+  FeeAmountUpdated: "Fee amount updated",
+  ProtocolFeesWithdrawn: "Protocol fees withdrawn",
+  CapabilityRegistered: "Capability registered",
+  CapabilityUpdated: "Capability updated",
+  CapabilityStatusChanged: "Capability status changed",
+  PolicyCreated: "Autonomy policy created",
+  PolicyUpdated: "Autonomy policy updated",
+  ProcessCreated: "OS process created",
+  ProcessStarted: "OS process started",
+  ProcessStepRequested: "OS process step requested",
+  ProcessStepCompleted: "OS process step completed",
+  ProcessCompleted: "OS process completed",
+  ProcessFailed: "OS process failed",
+  ProcessCancelled: "OS process cancelled",
+  MemoryWritten: "Process memory written",
+  AgentHandoff: "Agent handoff recorded",
+  ProcessEvaluation: "Process evaluation recorded",
+  OSAgentRunRequested: "OS agent run requested",
+  OSAgentRunCompleted: "OS agent run completed"
 };
 
 const seededTransactionHashes = [
@@ -88,7 +109,7 @@ export async function getOnchainActivity() {
   // Somnia Shannon currently limits eth_getLogs ranges to 1000 blocks.
   const fromBlock = latest > 950n ? latest - 950n : 0n;
 
-  const logBatches = await Promise.all(contractCatalog.map(async (contract) => {
+  const logBatches = await Promise.all(fullContractCatalog.map(async (contract) => {
     const logs = await publicClient.getLogs({
       address: contract.address as Address,
       fromBlock,
@@ -117,7 +138,7 @@ function decodeReceipt(receipt: TransactionReceipt) {
 
 function decodeLogs(logs: Array<{ address: Address; data: `0x${string}`; topics: [] | [`0x${string}`, ...`0x${string}`[]]; transactionHash?: Hash; blockNumber?: bigint; logIndex?: number }>) {
   return logs.flatMap((log) => {
-    const contract = contractCatalog.find((item) => item.address.toLowerCase() === log.address.toLowerCase());
+    const contract = fullContractCatalog.find((item) => item.address.toLowerCase() === log.address.toLowerCase());
     if (!contract) return [];
     try {
       const decoded = decodeEventLog({

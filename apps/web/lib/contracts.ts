@@ -28,6 +28,20 @@ export const contracts = {
   SomniacAgentRouter: "0xb7efE12dBd93DAEDe894A9237aaBd67839A3f09B"
 } as const;
 
+export const zeroAddress = "0x0000000000000000000000000000000000000000";
+
+export const osContracts = {
+  ProtocolFeeVault: process.env.NEXT_PUBLIC_PROTOCOL_FEE_VAULT ?? zeroAddress,
+  CapabilityRegistry: process.env.NEXT_PUBLIC_CAPABILITY_REGISTRY ?? zeroAddress,
+  AutonomyPolicyRegistry: process.env.NEXT_PUBLIC_AUTONOMY_POLICY_REGISTRY ?? zeroAddress,
+  ProcessManager: process.env.NEXT_PUBLIC_PROCESS_MANAGER ?? zeroAddress,
+  MemoryLedger: process.env.NEXT_PUBLIC_MEMORY_LEDGER ?? zeroAddress,
+  SomniacAgentRouterV2: process.env.NEXT_PUBLIC_SOMNIAC_AGENT_ROUTER_V2 ?? zeroAddress
+} as const;
+
+export const osKernelEnabled = process.env.NEXT_PUBLIC_ENABLE_OS_KERNEL === "true";
+export const osKernelConfigured = Object.values(osContracts).every((address) => address !== zeroAddress);
+
 export const agentRegistryAbi = [
   { type: "function", name: "createAgent", stateMutability: "nonpayable", inputs: [{ name: "wallet", type: "address" }, { name: "metadataURI", type: "string" }, { name: "skills", type: "string" }], outputs: [{ name: "agentId", type: "uint256" }] },
   { type: "function", name: "updateAgent", stateMutability: "nonpayable", inputs: [{ name: "agentId", type: "uint256" }, { name: "metadataURI", type: "string" }, { name: "skills", type: "string" }, { name: "active", type: "bool" }], outputs: [] },
@@ -117,6 +131,57 @@ export const somniacAgentRouterAbi = [
   { type: "event", name: "AgentRunCompleted", inputs: [{ indexed: true, name: "requestId", type: "uint256" }, { indexed: true, name: "user", type: "address" }, { indexed: false, name: "appAgentId", type: "string" }, { indexed: false, name: "status", type: "uint8" }, { indexed: false, name: "result", type: "string" }] }
 ] as const;
 
+export const protocolFeeVaultAbi = [
+  { type: "function", name: "feeAmount", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "feeRecipient", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "totalCollected", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "withdraw", stateMutability: "nonpayable", inputs: [{ name: "amount", type: "uint256" }], outputs: [] },
+  { type: "event", name: "ProtocolFeePaid", inputs: [{ indexed: true, name: "payer", type: "address" }, { indexed: false, name: "actionType", type: "string" }, { indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: false, name: "amount", type: "uint256" }] },
+  { type: "event", name: "FeeRecipientUpdated", inputs: [{ indexed: true, name: "recipient", type: "address" }] },
+  { type: "event", name: "FeeAmountUpdated", inputs: [{ indexed: false, name: "amount", type: "uint256" }] },
+  { type: "event", name: "ProtocolFeesWithdrawn", inputs: [{ indexed: true, name: "recipient", type: "address" }, { indexed: false, name: "amount", type: "uint256" }] }
+] as const;
+
+export const capabilityRegistryAbi = [
+  { type: "function", name: "getCapabilityCount", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "registerCapability", stateMutability: "nonpayable", inputs: [{ name: "capabilityId", type: "bytes32" }, { name: "label", type: "string" }, { name: "description", type: "string" }, { name: "mode", type: "uint8" }, { name: "somniaAgentId", type: "uint256" }, { name: "schemaURI", type: "string" }], outputs: [] },
+  { type: "event", name: "CapabilityRegistered", inputs: [{ indexed: true, name: "capabilityId", type: "bytes32" }, { indexed: false, name: "label", type: "string" }, { indexed: false, name: "mode", type: "uint8" }, { indexed: false, name: "somniaAgentId", type: "uint256" }, { indexed: false, name: "schemaURI", type: "string" }] },
+  { type: "event", name: "CapabilityUpdated", inputs: [{ indexed: true, name: "capabilityId", type: "bytes32" }, { indexed: false, name: "label", type: "string" }, { indexed: false, name: "mode", type: "uint8" }, { indexed: false, name: "somniaAgentId", type: "uint256" }, { indexed: false, name: "schemaURI", type: "string" }] },
+  { type: "event", name: "CapabilityStatusChanged", inputs: [{ indexed: true, name: "capabilityId", type: "bytes32" }, { indexed: false, name: "active", type: "bool" }] }
+] as const;
+
+export const autonomyPolicyRegistryAbi = [
+  { type: "function", name: "createPolicy", stateMutability: "payable", inputs: [{ name: "maxSpend", type: "uint256" }, { name: "maxSteps", type: "uint256" }, { name: "maxRetries", type: "uint256" }, { name: "allowChainedSteps", type: "bool" }, { name: "capabilities_", type: "bytes32[]" }, { name: "allowedDomainsURI", type: "string" }], outputs: [{ name: "policyId", type: "uint256" }] },
+  { type: "event", name: "PolicyCreated", inputs: [{ indexed: true, name: "policyId", type: "uint256" }, { indexed: true, name: "owner", type: "address" }, { indexed: false, name: "maxSpend", type: "uint256" }, { indexed: false, name: "maxSteps", type: "uint256" }, { indexed: false, name: "maxRetries", type: "uint256" }, { indexed: false, name: "allowChainedSteps", type: "bool" }, { indexed: false, name: "allowedDomainsURI", type: "string" }] },
+  { type: "event", name: "PolicyUpdated", inputs: [{ indexed: true, name: "policyId", type: "uint256" }, { indexed: false, name: "maxSpend", type: "uint256" }, { indexed: false, name: "maxSteps", type: "uint256" }, { indexed: false, name: "maxRetries", type: "uint256" }, { indexed: false, name: "allowChainedSteps", type: "bool" }, { indexed: false, name: "allowedDomainsURI", type: "string" }] }
+] as const;
+
+export const processManagerAbi = [
+  { type: "function", name: "createProcess", stateMutability: "payable", inputs: [{ name: "goal", type: "string" }, { name: "policyId", type: "uint256" }, { name: "metadataURI", type: "string" }], outputs: [{ name: "processId", type: "uint256" }] },
+  { type: "function", name: "completeProcess", stateMutability: "nonpayable", inputs: [{ name: "processId", type: "uint256" }, { name: "finalSummary", type: "string" }, { name: "resultURI", type: "string" }], outputs: [] },
+  { type: "event", name: "ProcessCreated", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "owner", type: "address" }, { indexed: true, name: "policyId", type: "uint256" }, { indexed: false, name: "goal", type: "string" }, { indexed: false, name: "metadataURI", type: "string" }] },
+  { type: "event", name: "ProcessStarted", inputs: [{ indexed: true, name: "processId", type: "uint256" }] },
+  { type: "event", name: "ProcessStepRequested", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: true, name: "capabilityId", type: "bytes32" }, { indexed: false, name: "appAgentId", type: "string" }, { indexed: false, name: "somniaAgentId", type: "uint256" }, { indexed: false, name: "mode", type: "uint8" }, { indexed: false, name: "requestId", type: "uint256" }, { indexed: false, name: "prompt", type: "string" }, { indexed: false, name: "url", type: "string" }, { indexed: false, name: "totalCost", type: "uint256" }] },
+  { type: "event", name: "ProcessStepCompleted", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: true, name: "requestId", type: "uint256" }, { indexed: false, name: "status", type: "uint8" }, { indexed: false, name: "result", type: "string" }] },
+  { type: "event", name: "ProcessCompleted", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: false, name: "finalSummary", type: "string" }, { indexed: false, name: "resultURI", type: "string" }] },
+  { type: "event", name: "ProcessFailed", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: false, name: "reason", type: "string" }] },
+  { type: "event", name: "ProcessCancelled", inputs: [{ indexed: true, name: "processId", type: "uint256" }] }
+] as const;
+
+export const memoryLedgerAbi = [
+  { type: "event", name: "MemoryWritten", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: false, name: "kind", type: "string" }, { indexed: false, name: "contentURI", type: "string" }, { indexed: false, name: "summary", type: "string" }, { indexed: true, name: "writer", type: "address" }] },
+  { type: "event", name: "AgentHandoff", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "fromCapability", type: "bytes32" }, { indexed: true, name: "toCapability", type: "bytes32" }, { indexed: false, name: "reasonURI", type: "string" }] },
+  { type: "event", name: "ProcessEvaluation", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: false, name: "score", type: "uint256" }, { indexed: false, name: "riskLevel", type: "string" }, { indexed: false, name: "evaluationURI", type: "string" }] }
+] as const;
+
+export const somniacAgentRouterV2Abi = [
+  { type: "function", name: "getRequiredDeposit", stateMutability: "view", inputs: [{ name: "mode", type: "uint8" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "getTotalDue", stateMutability: "view", inputs: [{ name: "mode", type: "uint8" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "requestProcessAgentRun", stateMutability: "payable", inputs: [{ name: "processId", type: "uint256" }, { name: "capabilityId", type: "bytes32" }, { name: "appAgentId", type: "string" }, { name: "task", type: "string" }, { name: "constraints", type: "string" }, { name: "urls", type: "string[]" }, { name: "mode", type: "uint8" }], outputs: [{ name: "requestId", type: "uint256" }] },
+  { type: "event", name: "OSAgentRunRequested", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: true, name: "requestId", type: "uint256" }, { indexed: false, name: "user", type: "address" }, { indexed: false, name: "capabilityId", type: "bytes32" }, { indexed: false, name: "appAgentId", type: "string" }, { indexed: false, name: "somniaAgentId", type: "uint256" }, { indexed: false, name: "mode", type: "uint8" }, { indexed: false, name: "task", type: "string" }, { indexed: false, name: "url", type: "string" }, { indexed: false, name: "deposit", type: "uint256" }, { indexed: false, name: "protocolFee", type: "uint256" }] },
+  { type: "event", name: "OSAgentRunCompleted", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: true, name: "requestId", type: "uint256" }, { indexed: false, name: "status", type: "uint8" }, { indexed: false, name: "result", type: "string" }] }
+] as const;
+
 export const contractCatalog = [
   { key: "AgentRegistry", address: contracts.AgentRegistry, abi: agentRegistryAbi },
   { key: "OrganizationRegistry", address: contracts.OrganizationRegistry, abi: organizationRegistryAbi },
@@ -131,3 +196,14 @@ export const contractCatalog = [
   { key: "WorldEventRegistry", address: contracts.WorldEventRegistry, abi: worldEventRegistryAbi },
   { key: "SomniacAgentRouter", address: contracts.SomniacAgentRouter, abi: somniacAgentRouterAbi }
 ] as const;
+
+export const osContractCatalog = [
+  { key: "ProtocolFeeVault", address: osContracts.ProtocolFeeVault, abi: protocolFeeVaultAbi },
+  { key: "CapabilityRegistry", address: osContracts.CapabilityRegistry, abi: capabilityRegistryAbi },
+  { key: "AutonomyPolicyRegistry", address: osContracts.AutonomyPolicyRegistry, abi: autonomyPolicyRegistryAbi },
+  { key: "ProcessManager", address: osContracts.ProcessManager, abi: processManagerAbi },
+  { key: "MemoryLedger", address: osContracts.MemoryLedger, abi: memoryLedgerAbi },
+  { key: "SomniacAgentRouterV2", address: osContracts.SomniacAgentRouterV2, abi: somniacAgentRouterV2Abi }
+].filter((contract) => contract.address !== zeroAddress);
+
+export const fullContractCatalog = [...contractCatalog, ...osContractCatalog] as const;

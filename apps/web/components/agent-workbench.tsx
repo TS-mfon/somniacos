@@ -5,7 +5,7 @@ import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionD
 import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, Loader2, RadioTower, X } from "lucide-react";
 import { useOnchainActivity } from "./live-economy";
 import { useSomniaWallet } from "./wallet-button";
-import { contracts, somnia, somniacAgentRouterAbi } from "../lib/contracts";
+import { contracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterAbi } from "../lib/contracts";
 import { curatedAgents, matchOnchainAgent, readableAgentLabel, type AgentRunRecord } from "../lib/agent-engine";
 import { summarizeError } from "../lib/onchain-state";
 
@@ -280,6 +280,11 @@ export function AgentWorkbench() {
           </div>
           <div className="rounded-2xl border border-signal/15 bg-signal/[0.04] p-4 text-xs leading-5 text-white/55">
             You sign once. Somnia validators run the agent. The result appears here after the router receives the callback.
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/55">
+            <p className="font-mono uppercase tracking-[0.2em] text-white/35">OS mode</p>
+            <p className="mt-2">{osKernelEnabled && osKernelConfigured ? "For multi-step autonomous workflows, launch an OS process from Command Center and run agent steps with protocol-fee accounting." : "OS process mode is branch-gated until the new kernel contracts are deployed and configured."}</p>
+            <a href="/app/os" className="mt-3 inline-flex rounded-lg border border-signal/25 bg-signal/10 px-3 py-2 font-semibold text-signal">Open OS Command Center</a>
           </div>
           <button onClick={runAgent} disabled={isRunning} className="inline-flex items-center justify-center gap-2 rounded-xl bg-signal px-5 py-3 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60">
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RadioTower className="h-4 w-4" />}
