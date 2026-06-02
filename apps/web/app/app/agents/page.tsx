@@ -5,7 +5,7 @@ import { curatedAgents } from "../../../lib/agent-engine";
 export default function AgentsPage() {
   return (
     <>
-      <PageHero title="Specialist Agents" eyebrow="Somnia runtime">Choose a purpose-built agent. Each one routes your task into the Somnia Agents platform and returns only real callback results.</PageHero>
+      <PageHero title="Specialist Agents" eyebrow="Somnia runtime">Choose a purpose-built agent. Each one can run missions, use saved context, produce proof-backed outputs, and hand work to another specialist.</PageHero>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {curatedAgents.map((agent) => (
           <article key={agent.id} className="panel rounded-2xl p-5">

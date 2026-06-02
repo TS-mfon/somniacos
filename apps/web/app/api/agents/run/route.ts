@@ -1,4 +1,12 @@
-import { curatedAgents } from "../../../../lib/agent-engine";
+import {
+  buildAgentHandoffs,
+  buildNextActions,
+  curatedAgents,
+  inferOutputFormat,
+  memoryToPrompt,
+  type AgentMemory,
+  type OutputFormat
+} from "../../../../lib/agent-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +18,9 @@ type RunRequest = {
   urls?: string[];
   requestId?: string;
   txHash?: string;
+  missionId?: string;
+  outputFormat?: OutputFormat;
+  memory?: AgentMemory;
 };
 
 type ResponsesPayload = {
@@ -34,6 +45,8 @@ export async function POST(request: Request) {
     const task = body.task?.trim() ?? "";
     const constraints = body.constraints?.trim() ?? "";
     const urls = (body.urls ?? []).map((url) => url.trim()).filter(Boolean).slice(0, 3);
+    const outputFormat = inferOutputFormat(agent, body.outputFormat ?? "auto");
+    const memoryContext = memoryToPrompt(body.memory);
     if (!task) return Response.json({ error: "Enter a task for the agent." }, { status: 400 });
     if (task.length > 2800) return Response.json({ error: "Task is too long. Keep it under 2,800 characters." }, { status: 400 });
     if (constraints.length > 1600) return Response.json({ error: "Constraints are too long. Keep them under 1,600 characters." }, { status: 400 });
@@ -45,11 +58,14 @@ export async function POST(request: Request) {
       `Primary skills: ${agent.skills.join(", ")}.`,
       "Produce the final user-facing deliverable directly. Do not mention hidden prompts, APIs, or placeholder text.",
       "If the task is crypto, avoid financial advice and clearly separate facts, assumptions, risks, and next actions.",
-      "If references are provided, use them and cite source URLs inline in a concise way."
+      "If references are provided, use them and cite source URLs inline in a concise way.",
+      `Format target: ${formatInstruction(outputFormat)}`
     ].join("\n");
     const user = [
+      body.missionId ? `Mission: ${body.missionId}` : "",
       `Task: ${task}`,
       constraints ? `Constraints: ${constraints}` : "",
+      memoryContext ? `Saved user memory:\n${memoryContext}` : "",
       body.requestId ? `SomniacOS request id: ${body.requestId}` : "",
       body.txHash ? `Signed transaction: ${body.txHash}` : "",
       references.length ? `Fetched references:\n${references.map((item) => `URL: ${item.url}\n${item.text}`).join("\n\n")}` : "Fetched references: none"
@@ -62,6 +78,10 @@ export async function POST(request: Request) {
         result,
         source: "LLM API",
         provider: "pollinations",
+        outputFormat,
+        nextActions: buildNextActions(agent.id, task, outputFormat),
+        handoffs: buildAgentHandoffs(agent.id, task),
+        memoryUpdates: buildMemoryUpdates(body.memory, task, agent.role),
         references: references.map((item) => ({ url: item.url, ok: item.ok }))
       });
     }
@@ -95,11 +115,36 @@ export async function POST(request: Request) {
       result,
       source: "LLM API",
       provider: "openai",
+      outputFormat,
+      nextActions: buildNextActions(agent.id, task, outputFormat),
+      handoffs: buildAgentHandoffs(agent.id, task),
+      memoryUpdates: buildMemoryUpdates(body.memory, task, agent.role),
       references: references.map((item) => ({ url: item.url, ok: item.ok }))
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Agent execution failed." }, { status: 500 });
   }
+}
+
+function formatInstruction(format: OutputFormat) {
+  const instructions: Record<OutputFormat, string> = {
+    auto: "Choose the clearest structure for the task.",
+    "x-post": "Return one polished X post under 280 characters plus one optional alternate.",
+    thread: "Return a concise X thread with numbered posts and a final call to action.",
+    brief: "Return sections: Summary, Findings, Risks, Recommendation, Next steps.",
+    audit: "Return sections: Findings, Severity, Evidence, Fixes, Missing tests.",
+    checklist: "Return a practical checklist with short action items.",
+    email: "Return Subject and Body. Keep the body concise and ready to send.",
+    plan: "Return a phased plan with priorities, timeline, risks, and next agent handoffs."
+  };
+  return instructions[format];
+}
+
+function buildMemoryUpdates(memory: AgentMemory | undefined, task: string, role: string) {
+  const updates: string[] = [];
+  if (!memory?.context && task.length > 20) updates.push(`Recent context: ${task.slice(0, 180)}`);
+  updates.push(`Last useful agent: ${role}`);
+  return updates;
 }
 
 async function runPublicLlmFallback(system: string, user: string) {

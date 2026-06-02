@@ -100,6 +100,19 @@ The visible OS section was removed because it was not useful to visitors.
 - OS APIs and contracts remain in place because Workbench and Revenue still use the underlying one-transaction workflow and fee accounting.
 - Verification after removal: `pnpm --filter @somniacos/web build` and `pnpm --filter @somniacos/web typecheck`.
 
+## 2026-06-02 Agentic Workbench Upgrade
+
+Implemented the requested agentic feature plan without reintroducing the removed OS dashboard.
+
+- Added mission presets to the Workbench: crypto launch, token/protocol research, builder audit, daily operator, and wallet safety.
+- Added wallet-local agent memory for project, audience, context, and preferences. Memory is stored in browser local storage and sent to the agent API as context.
+- Added result format control: auto, X post, thread, brief, audit, checklist, email, and plan.
+- Added structured agent handoffs and next actions after every completed run. Users can click a handoff/next action to prefill the next specialist run.
+- Added result studio rendering with copy button and proof metadata for source, request ID, agent, and signed transaction.
+- Added mission timeline from local completed runs so multi-step usage feels like an autonomous sequence.
+- Extended `/api/agents/run` to accept `missionId`, `outputFormat`, and `memory`, and return `outputFormat`, `nextActions`, `handoffs`, and `memoryUpdates`.
+- Verification: `pnpm --filter @somniacos/web build` passed, then standalone `pnpm --filter @somniacos/web typecheck` passed.
+
 Current caveat:
 
 - The new Workbench output path is real LLM execution, but because the Vercel project currently has no `OPENAI_API_KEY`, it uses the public fallback provider. For stronger reliability, add `OPENAI_API_KEY` and optionally `OPENAI_MODEL` to Vercel.

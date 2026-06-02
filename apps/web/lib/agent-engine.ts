@@ -48,9 +48,48 @@ export type AgentRunRecord = {
   status: "Pending" | "Success" | "Failed" | "TimedOut";
   result: string;
   source?: "Somnia" | "LLM API";
+  missionId?: string;
+  outputFormat?: OutputFormat;
+  nextActions?: AgentNextAction[];
+  handoffs?: AgentHandoff[];
+  memorySnapshot?: string;
   createdAt: string;
   completedAt: string;
   txHash?: string;
+};
+
+export type OutputFormat = "auto" | "x-post" | "thread" | "brief" | "audit" | "checklist" | "email" | "plan";
+
+export type AgentMission = {
+  id: string;
+  label: string;
+  description: string;
+  agentId: string;
+  task: string;
+  constraints: string;
+  outputFormat: OutputFormat;
+};
+
+export type AgentMemory = {
+  projectName: string;
+  audience: string;
+  context: string;
+  preferences: string;
+  lastUpdated: string;
+};
+
+export type AgentNextAction = {
+  label: string;
+  agentId: string;
+  task: string;
+  constraints: string;
+  outputFormat: OutputFormat;
+};
+
+export type AgentHandoff = {
+  agentId: string;
+  reason: string;
+  task: string;
 };
 
 export const curatedAgents: CuratedAgent[] = [
@@ -316,6 +355,65 @@ export const curatedAgents: CuratedAgent[] = [
   }
 ];
 
+export const outputFormats: Array<{ id: OutputFormat; label: string; description: string }> = [
+  { id: "auto", label: "Auto", description: "Let the agent choose the best structure." },
+  { id: "x-post", label: "X post", description: "Short publishable social output." },
+  { id: "thread", label: "Thread", description: "Multi-post sequence with hooks." },
+  { id: "brief", label: "Brief", description: "Findings, risks, and recommendation." },
+  { id: "audit", label: "Audit", description: "Issues, severity, evidence, and fixes." },
+  { id: "checklist", label: "Checklist", description: "Actionable steps a user can follow." },
+  { id: "email", label: "Email", description: "Subject and concise body copy." },
+  { id: "plan", label: "Plan", description: "Phased execution with next steps." }
+];
+
+export const agentMissions: AgentMission[] = [
+  {
+    id: "crypto-founder-launch",
+    label: "Launch my crypto project",
+    description: "Marketing strategy, content direction, and practical launch next steps.",
+    agentId: "marketing-strategist",
+    task: "Create a seven-day launch mission for my crypto product.",
+    constraints: "Use my saved memory if available. Include positioning, audience, launch channels, content calendar, risks, and next agent handoffs.",
+    outputFormat: "plan"
+  },
+  {
+    id: "token-due-diligence",
+    label: "Research a token or protocol",
+    description: "Balanced research with utility, risks, catalysts, and unknowns.",
+    agentId: "token-researcher",
+    task: "Research this token or protocol and explain whether it deserves deeper review.",
+    constraints: "No financial advice. Separate facts, assumptions, risks, catalysts, and what to verify next.",
+    outputFormat: "brief"
+  },
+  {
+    id: "builder-audit",
+    label: "Audit my code or contract",
+    description: "Security-minded review with concrete fixes and missing tests.",
+    agentId: "code-auditor",
+    task: "Audit this code or smart contract snippet for bugs, security risks, and missing tests.",
+    constraints: "Prioritize exploitable issues, runtime failures, severity, proof, and actionable fixes.",
+    outputFormat: "audit"
+  },
+  {
+    id: "daily-operator",
+    label: "Plan my day",
+    description: "Turns messy goals into a realistic work plan.",
+    agentId: "productivity-planner",
+    task: "Plan a focused workday from my current goals and constraints.",
+    constraints: "Include priority order, time blocks, what to ignore, and a final checklist.",
+    outputFormat: "checklist"
+  },
+  {
+    id: "wallet-safety",
+    label: "Check wallet or dApp risk",
+    description: "Plain-English safety review before interacting with a wallet, contract, or dApp.",
+    agentId: "wallet-risk-scanner",
+    task: "Create a safety review for this wallet, transaction, or dApp interaction.",
+    constraints: "Make it understandable for a non-technical user. Include red flags, safe actions, and what not to sign.",
+    outputFormat: "checklist"
+  }
+];
+
 export function matchOnchainAgent(agent: CuratedAgent, onchainAgents: AgentState[]) {
   return onchainAgents.find((candidate) => {
     const haystack = `${candidate.name} ${candidate.skills.join(" ")} ${candidate.metadataURI}`.toLowerCase();
@@ -325,4 +423,84 @@ export function matchOnchainAgent(agent: CuratedAgent, onchainAgents: AgentState
 
 export function readableAgentLabel(agentId: string) {
   return curatedAgents.find((agent) => agent.id === agentId)?.role ?? labelFromUri(agentId);
+}
+
+export function defaultMemory(): AgentMemory {
+  return {
+    projectName: "",
+    audience: "",
+    context: "",
+    preferences: "",
+    lastUpdated: ""
+  };
+}
+
+export function memoryToPrompt(memory?: AgentMemory) {
+  if (!memory) return "";
+  const lines = [
+    memory.projectName ? `Project: ${memory.projectName}` : "",
+    memory.audience ? `Audience: ${memory.audience}` : "",
+    memory.context ? `Context: ${memory.context}` : "",
+    memory.preferences ? `Preferences: ${memory.preferences}` : ""
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+export function inferOutputFormat(agent: CuratedAgent, requested: OutputFormat): OutputFormat {
+  if (requested !== "auto") return requested;
+  if (agent.taskType === "content") return "x-post";
+  if (agent.taskType === "code-audit" || agent.taskType === "security-audit") return "audit";
+  if (agent.taskType === "email") return "email";
+  if (agent.taskType === "wallet-risk" || agent.taskType === "airdrop") return "checklist";
+  if (agent.taskType === "marketing" || agent.taskType === "treasury" || agent.taskType === "productivity" || agent.taskType === "travel") return "plan";
+  return "brief";
+}
+
+export function buildAgentHandoffs(agentId: string, task: string): AgentHandoff[] {
+  const handoffs: Record<string, AgentHandoff[]> = {
+    "marketing-strategist": [
+      { agentId: "content-writer", reason: "Turn the strategy into publishable posts.", task: `Write launch content based on: ${task}` },
+      { agentId: "research-analyst", reason: "Validate market claims and competitors.", task: `Research evidence and competitors for: ${task}` }
+    ],
+    "research-analyst": [
+      { agentId: "content-writer", reason: "Convert findings into a clear public narrative.", task: `Create content from this research: ${task}` },
+      { agentId: "security-auditor", reason: "Review risks and weak claims.", task: `Audit the risk assumptions in: ${task}` }
+    ],
+    "token-researcher": [
+      { agentId: "wallet-risk-scanner", reason: "Check interaction and signing risks.", task: `Create wallet safety steps for: ${task}` },
+      { agentId: "portfolio-planner", reason: "Translate research into a risk framework.", task: `Create a non-financial risk framework for: ${task}` }
+    ],
+    "code-auditor": [
+      { agentId: "security-auditor", reason: "Escalate security-sensitive findings.", task: `Create an incident-style risk summary for: ${task}` },
+      { agentId: "content-writer", reason: "Summarize fixes for a changelog or PR.", task: `Write a concise fix summary for: ${task}` }
+    ],
+    "wallet-risk-scanner": [
+      { agentId: "transaction-explainer", reason: "Explain the transaction in plain English.", task: `Explain this transaction or wallet action: ${task}` },
+      { agentId: "security-auditor", reason: "Escalate suspicious patterns.", task: `Classify security severity for: ${task}` }
+    ]
+  };
+  return (handoffs[agentId] ?? [
+    { agentId: "research-analyst", reason: "Gather more context before the next run.", task: `Research supporting context for: ${task}` },
+    { agentId: "content-writer", reason: "Turn the output into a shareable deliverable.", task: `Create a publishable summary for: ${task}` }
+  ]).slice(0, 2);
+}
+
+export function buildNextActions(agentId: string, task: string, outputFormat: OutputFormat): AgentNextAction[] {
+  const handoffs = buildAgentHandoffs(agentId, task);
+  return [
+    {
+      label: "Improve this result",
+      agentId,
+      task: `Improve and sharpen this output: ${task}`,
+      constraints: "Keep the strongest parts, remove weak claims, and make the output more useful.",
+      outputFormat
+    },
+    ...handoffs.map((handoff) => ({
+      label: `Hand off to ${readableAgentLabel(handoff.agentId)}`,
+      agentId: handoff.agentId,
+      task: handoff.task,
+      constraints: handoff.reason,
+      outputFormat: "auto" as OutputFormat
+    }))
+  ].slice(0, 3);
 }

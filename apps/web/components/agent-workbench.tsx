@@ -2,11 +2,26 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Address, type Hash } from "viem";
-import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, Loader2, RadioTower, X } from "lucide-react";
+import { AlertTriangle, Brain, CheckCircle2, Clock3, Copy, ExternalLink, GitBranch, Loader2, RadioTower, Sparkles, X } from "lucide-react";
 import { useOnchainActivity } from "./live-economy";
 import { useSomniaWallet } from "./wallet-button";
 import { osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi } from "../lib/contracts";
-import { curatedAgents, matchOnchainAgent, readableAgentLabel, type AgentRunRecord, type CuratedAgent } from "../lib/agent-engine";
+import {
+  agentMissions,
+  buildAgentHandoffs,
+  buildNextActions,
+  curatedAgents,
+  defaultMemory,
+  inferOutputFormat,
+  matchOnchainAgent,
+  outputFormats,
+  readableAgentLabel,
+  type AgentMemory,
+  type AgentNextAction,
+  type AgentRunRecord,
+  type CuratedAgent,
+  type OutputFormat
+} from "../lib/agent-engine";
 import { summarizeError } from "../lib/onchain-state";
 
 const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
@@ -73,10 +88,14 @@ const statusSteps: Array<{ phase: RunPhase; label: string }> = [
 export function AgentWorkbench() {
   const { data, state, reload } = useOnchainActivity(8000);
   const { wallet, connect, switchToSomnia, walletClient, refresh } = useSomniaWallet();
-  const [agentId, setAgentId] = useState(curatedAgents[1].id);
-  const [goal, setGoal] = useState(curatedAgents[1].defaultTask);
-  const [constraints, setConstraints] = useState(curatedAgents[1].defaultConstraints);
+  const [agentId, setAgentId] = useState(agentMissions[0].agentId);
+  const [missionId, setMissionId] = useState(agentMissions[0].id);
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>(agentMissions[0].outputFormat);
+  const [goal, setGoal] = useState(agentMissions[0].task);
+  const [constraints, setConstraints] = useState(agentMissions[0].constraints);
   const [webUrls, setWebUrls] = useState("");
+  const [memory, setMemory] = useState<AgentMemory>(defaultMemory());
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [deposit, setDeposit] = useState<bigint | null>(null);
   const [quoteError, setQuoteError] = useState("");
   const [activeRun, setActiveRun] = useState<AgentRunRecord | null>(null);
@@ -85,6 +104,7 @@ export function AgentWorkbench() {
   const [localRuns, setLocalRuns] = useState<AgentRunRecord[]>([]);
 
   const selected = useMemo(() => curatedAgents.find((agent) => agent.id === agentId) ?? curatedAgents[0], [agentId]);
+  const selectedMission = useMemo(() => agentMissions.find((mission) => mission.id === missionId) ?? agentMissions[0], [missionId]);
   const matchedOnchain = useMemo(() => matchOnchainAgent(selected, state.agents), [selected, state.agents]);
   const allUrls = useMemo(() => webUrls.split(/\s+/).map((url) => url.trim()).filter(Boolean), [webUrls]);
   const urls = useMemo(() => allUrls.slice(0, 3), [allUrls]);
@@ -150,6 +170,14 @@ export function AgentWorkbench() {
         setLocalRuns([]);
       }
     }
+    const storedMemory = window.localStorage.getItem("somniacos.agentMemory");
+    if (storedMemory) {
+      try {
+        setMemory({ ...defaultMemory(), ...JSON.parse(storedMemory) as AgentMemory });
+      } catch {
+        setMemory(defaultMemory());
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -212,7 +240,33 @@ export function AgentWorkbench() {
     setAgentId(agent.id);
     setGoal(agent.defaultTask);
     setConstraints(agent.defaultConstraints);
+    setOutputFormat(inferOutputFormat(agent, "auto"));
     setWebUrls("");
+  }
+
+  function applyMission(id: string) {
+    const mission = agentMissions.find((item) => item.id === id) ?? agentMissions[0];
+    const agent = curatedAgents.find((item) => item.id === mission.agentId) ?? curatedAgents[0];
+    setMissionId(mission.id);
+    setAgentId(agent.id);
+    setGoal(mission.task);
+    setConstraints(mission.constraints);
+    setOutputFormat(mission.outputFormat);
+  }
+
+  function updateMemory(next: AgentMemory) {
+    const saved = { ...next, lastUpdated: new Date().toISOString() };
+    setMemory(saved);
+    window.localStorage.setItem("somniacos.agentMemory", JSON.stringify(saved));
+  }
+
+  function runNextAction(action: AgentNextAction) {
+    const agent = curatedAgents.find((item) => item.id === action.agentId) ?? selected;
+    setAgentId(agent.id);
+    setGoal(action.task);
+    setConstraints(action.constraints);
+    setOutputFormat(action.outputFormat);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function runAgent() {
@@ -280,7 +334,10 @@ export function AgentWorkbench() {
         task: goal.trim(),
         constraints: constraints.trim(),
         urls,
-        modeLabel: modeLabels[mode] ?? "LLM"
+        modeLabel: modeLabels[mode] ?? "LLM",
+        missionId,
+        outputFormat,
+        memory
       });
       setActiveRun(finalRun);
       saveRun(finalRun);
@@ -347,6 +404,13 @@ export function AgentWorkbench() {
         ) : null}
         <div className="mt-6 grid gap-4">
           <label className="block">
+            <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Mission</span>
+            <select value={missionId} onChange={(event) => applyMission(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
+              {agentMissions.map((mission) => <option key={mission.id} value={mission.id}>{mission.label}</option>)}
+            </select>
+            <span className="mt-2 block text-xs leading-5 text-white/38">{selectedMission.description}</span>
+          </label>
+          <label className="block">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Specialist</span>
             <select value={agentId} onChange={(event) => applyAgent(curatedAgents.find((agent) => agent.id === event.target.value) ?? curatedAgents[0])} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
               {categories.map((category) => (
@@ -369,6 +433,12 @@ export function AgentWorkbench() {
             <textarea value={webUrls} onChange={(event) => setWebUrls(event.target.value)} placeholder="https://example.com" className="mt-2 min-h-16 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60" />
             <span className="mt-2 block text-xs text-white/38">Add a full URL when the agent should use Somnia&apos;s website parser. Leave blank for LLM inference.</span>
           </label>
+          <label className="block">
+            <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Result format</span>
+            <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value as OutputFormat)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
+              {outputFormats.map((format) => <option key={format.id} value={format.id}>{format.label} - {format.description}</option>)}
+            </select>
+          </label>
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">One transaction total</span>
@@ -385,6 +455,23 @@ export function AgentWorkbench() {
       </section>
 
       <aside className="space-y-4">
+        <div className="panel rounded-[1.5rem] p-5">
+          <button onClick={() => setMemoryOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
+            <span>
+              <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-signal"><Brain className="h-4 w-4" /> Agent memory</span>
+              <span className="mt-2 block text-sm text-white/52">{memory.projectName || memory.context ? "Personalized context is active." : "Add context once; agents reuse it."}</span>
+            </span>
+            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/45">{memoryOpen ? "Close" : "Edit"}</span>
+          </button>
+          {memoryOpen ? (
+            <div className="mt-4 grid gap-3">
+              <MemoryInput label="Project" value={memory.projectName} onChange={(value) => updateMemory({ ...memory, projectName: value })} />
+              <MemoryInput label="Audience" value={memory.audience} onChange={(value) => updateMemory({ ...memory, audience: value })} />
+              <MemoryText label="Context" value={memory.context} onChange={(value) => updateMemory({ ...memory, context: value })} />
+              <MemoryText label="Preferences" value={memory.preferences} onChange={(value) => updateMemory({ ...memory, preferences: value })} />
+            </div>
+          ) : null}
+        </div>
         <div className="panel rounded-[1.5rem] p-5">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-signal">{selected.category} / {selected.role}</p>
           <h3 className="mt-3 text-3xl font-semibold text-white">{selected.name}</h3>
@@ -405,14 +492,17 @@ export function AgentWorkbench() {
         </div>
       </aside>
 
-      {latestResult ? <LatestResult run={latestResult} /> : null}
-      <AnchoredResults results={anchoredResults} />
+      {latestResult ? <LatestResult run={latestResult} onNextAction={runNextAction} /> : null}
+      <MissionTimeline runs={localRuns} activeMissionId={missionId} />
+      <AnchoredResults results={anchoredResults} onNextAction={runNextAction} />
       {resultModal ? <ResultModal run={resultModal} onClose={() => setResultModal(null)} /> : null}
     </div>
   );
 }
 
-function LatestResult({ run }: { run: AgentRunRecord }) {
+function LatestResult({ run, onNextAction }: { run: AgentRunRecord; onNextAction: (action: AgentNextAction) => void }) {
+  const actions = run.nextActions?.length ? run.nextActions : buildNextActions(run.appAgentId, run.task, run.outputFormat ?? "auto");
+  const handoffs = run.handoffs?.length ? run.handoffs : buildAgentHandoffs(run.appAgentId, run.task);
   return (
     <section className="xl:col-span-2 rounded-[1.5rem] border border-signal/25 bg-[linear-gradient(135deg,rgba(0,255,194,0.12),rgba(19,19,19,0.88))] p-5 shadow-[0_0_70px_rgba(0,255,194,0.10)] sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -423,13 +513,36 @@ function LatestResult({ run }: { run: AgentRunRecord }) {
         <span className="rounded-full border border-signal/30 bg-black/25 px-3 py-1 font-mono text-xs text-signal">request #{run.requestId}</span>
       </div>
       {run.task ? <p className="mt-3 text-sm text-white/48">{run.task}</p> : null}
-      <p className="mt-4 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-7 text-white/82">{run.result}</p>
-      {run.txHash ? <a className="mt-4 inline-flex items-center gap-2 font-mono text-xs text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${run.txHash}`} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" />View transaction</a> : null}
+      <ResultStudio run={run} />
+      <AgentProof run={run} />
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-signal"><GitBranch className="h-4 w-4" /> Agent handoffs</p>
+          <div className="mt-3 grid gap-2">
+            {handoffs.map((handoff) => (
+              <button key={`${handoff.agentId}-${handoff.task}`} onClick={() => onNextAction({ label: `Hand off to ${readableAgentLabel(handoff.agentId)}`, agentId: handoff.agentId, task: handoff.task, constraints: handoff.reason, outputFormat: "auto" })} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-signal/35">
+                <span className="block text-sm font-semibold text-white">{readableAgentLabel(handoff.agentId)}</span>
+                <span className="mt-1 block text-xs leading-5 text-white/45">{handoff.reason}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-signal"><Sparkles className="h-4 w-4" /> Autonomous next actions</p>
+          <div className="mt-3 grid gap-2">
+            {actions.map((action) => (
+              <button key={`${action.agentId}-${action.label}`} onClick={() => onNextAction(action)} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left text-sm text-white transition hover:border-signal/35">
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
 
-function AnchoredResults({ results }: { results: AgentRunRecord[] }) {
+function AnchoredResults({ results, onNextAction }: { results: AgentRunRecord[]; onNextAction: (action: AgentNextAction) => void }) {
   return (
     <section className="xl:col-span-2 panel rounded-[1.5rem] p-5 sm:p-6">
       <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Anchored results</p>
@@ -442,17 +555,84 @@ function AnchoredResults({ results }: { results: AgentRunRecord[] }) {
               <span className="font-mono text-xs text-signal">request #{item.requestId}</span>
             </div>
             {item.task ? <p className="mt-2 text-sm text-white/45">{item.task}</p> : null}
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-white/76">{item.result}</p>
+            <ResultStudio run={item} compact />
             <div className="mt-4 flex flex-wrap gap-3 font-mono text-xs text-white/38">
           <span>{item.mode}</span>
           {item.source ? <span>{item.source}</span> : null}
           {item.txHash ? <a className="text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${item.txHash}`} target="_blank" rel="noreferrer">tx</a> : null}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(item.nextActions ?? buildNextActions(item.appAgentId, item.task, item.outputFormat ?? "auto")).slice(0, 2).map((action) => (
+                <button key={`${item.requestId}-${action.label}`} onClick={() => onNextAction(action)} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/62 transition hover:border-signal/35 hover:text-white">{action.label}</button>
+              ))}
             </div>
           </article>
         ))}
         {!results.length ? <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.02] p-6 text-sm text-white/48">No completed Somnia Agent results yet. Run an agent and wait for the callback.</div> : null}
       </div>
     </section>
+  );
+}
+
+function ResultStudio({ run, compact = false }: { run: AgentRunRecord; compact?: boolean }) {
+  const format = run.outputFormat ?? "auto";
+  return (
+    <div className={`${compact ? "mt-3" : "mt-4"} rounded-2xl border border-white/10 bg-black/25 p-4`}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="font-mono text-xs uppercase tracking-[0.2em] text-signal">{format.replace("-", " ")}</span>
+        <button onClick={() => void navigator.clipboard?.writeText(run.result)} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 font-mono text-[11px] text-white/45 hover:text-white"><Copy className="h-3 w-3" /> copy</button>
+      </div>
+      <p className="whitespace-pre-wrap text-sm leading-7 text-white/82">{run.result}</p>
+    </div>
+  );
+}
+
+function AgentProof({ run }: { run: AgentRunRecord }) {
+  return (
+    <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 font-mono text-xs text-white/45 md:grid-cols-4">
+      <span>agent: {readableAgentLabel(run.appAgentId)}</span>
+      <span>source: {run.source ?? "Somnia"}</span>
+      <span>request: #{run.requestId}</span>
+      {run.txHash ? <a className="text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${run.txHash}`} target="_blank" rel="noreferrer">signed tx</a> : <span>signed tx: local</span>}
+    </div>
+  );
+}
+
+function MissionTimeline({ runs, activeMissionId }: { runs: AgentRunRecord[]; activeMissionId: string }) {
+  const missionRuns = runs.filter((run) => run.missionId === activeMissionId).slice(0, 4);
+  if (!missionRuns.length) return null;
+  return (
+    <section className="xl:col-span-2 panel rounded-[1.5rem] p-5 sm:p-6">
+      <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Mission timeline</p>
+      <h3 className="mt-3 text-3xl font-semibold text-white">Recent autonomous steps</h3>
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        {missionRuns.map((run, index) => (
+          <div key={`${run.requestId}-${index}`} className="rounded-2xl border border-white/10 bg-[#101010] p-4">
+            <p className="font-mono text-xs text-signal">step {missionRuns.length - index}</p>
+            <p className="mt-2 text-sm font-semibold text-white">{readableAgentLabel(run.appAgentId)}</p>
+            <p className="mt-2 line-clamp-3 text-xs leading-5 text-white/45">{run.task}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MemoryInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-[#101010] px-3 py-2 text-sm text-white outline-none focus:border-signal/60" />
+    </label>
+  );
+}
+
+function MemoryText({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">{label}</span>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 min-h-20 w-full rounded-xl border border-white/10 bg-[#101010] px-3 py-2 text-sm text-white outline-none focus:border-signal/60" />
+    </label>
   );
 }
 
@@ -522,15 +702,16 @@ function ResultModal({ run, onClose }: { run: AgentRunRecord; onClose: () => voi
       <section className="max-h-[88vh] w-full max-w-3xl overflow-auto rounded-[1.5rem] border border-signal/25 bg-[#131313] p-5 shadow-[0_0_80px_rgba(0,255,194,0.14)] sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Somnia result</p>
+            <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Agent result</p>
             <h2 className="mt-3 text-3xl font-semibold text-white">Request #{run.requestId} completed</h2>
           </div>
           <button onClick={onClose} className="rounded-full border border-white/10 p-2 text-white/60 hover:text-white"><X className="h-4 w-4" /></button>
         </div>
-        <p className="mt-5 whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-white/78">{run.result}</p>
+        <ResultStudio run={run} />
+        <AgentProof run={run} />
         <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-white/45">
           <CheckCircle2 className="h-4 w-4 text-signal" />
-          <span>Stored by SomniacOS fee router and visible in Anchored results.</span>
+          <span>Visible in Anchored results with the signed transaction proof.</span>
         </div>
       </section>
     </div>
@@ -583,7 +764,10 @@ async function executeAgent({
   task,
   constraints,
   urls,
-  modeLabel
+  modeLabel,
+  missionId,
+  outputFormat,
+  memory
 }: {
   requestId: string;
   hash: Hash;
@@ -593,6 +777,9 @@ async function executeAgent({
   constraints: string;
   urls: string[];
   modeLabel: AgentRunRecord["mode"];
+  missionId: string;
+  outputFormat: OutputFormat;
+  memory: AgentMemory;
 }): Promise<AgentRunRecord> {
   const response = await fetch("/api/agents/run", {
     method: "POST",
@@ -603,10 +790,13 @@ async function executeAgent({
       constraints,
       urls,
       requestId,
-      txHash: hash
+      txHash: hash,
+      missionId,
+      outputFormat,
+      memory
     })
   });
-  const payload = await response.json() as { result?: string; source?: "LLM API"; error?: string };
+  const payload = await response.json() as { result?: string; source?: "LLM API"; error?: string; outputFormat?: OutputFormat; nextActions?: AgentNextAction[]; handoffs?: AgentRunRecord["handoffs"]; memoryUpdates?: string[] };
   if (!response.ok || !payload.result) {
     return {
       requestId,
@@ -620,6 +810,11 @@ async function executeAgent({
       status: "Failed",
       result: payload.error ?? "Agent execution failed.",
       source: "LLM API",
+      missionId,
+      outputFormat,
+      nextActions: buildNextActions(selected.id, task, outputFormat),
+      handoffs: buildAgentHandoffs(selected.id, task),
+      memorySnapshot: memorySnapshot(memory),
       createdAt: "",
       completedAt: new Date().toISOString(),
       txHash: hash
@@ -637,10 +832,19 @@ async function executeAgent({
     status: "Success",
     result: payload.result,
     source: payload.source ?? "LLM API",
+    missionId,
+    outputFormat: payload.outputFormat ?? outputFormat,
+    nextActions: payload.nextActions ?? buildNextActions(selected.id, task, outputFormat),
+    handoffs: payload.handoffs ?? buildAgentHandoffs(selected.id, task),
+    memorySnapshot: payload.memoryUpdates?.join("\n") || memorySnapshot(memory),
     createdAt: "",
     completedAt: new Date().toISOString(),
     txHash: hash
   };
+}
+
+function memorySnapshot(memory: AgentMemory) {
+  return [memory.projectName, memory.audience, memory.context, memory.preferences].filter(Boolean).join(" | ");
 }
 
 async function waitForRun(requestId: string, txHash?: Hash) {
