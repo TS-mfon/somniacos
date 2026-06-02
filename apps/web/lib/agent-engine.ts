@@ -47,7 +47,7 @@ export type AgentRunRecord = {
   mode: "LLM" | "Website";
   status: "Pending" | "Success" | "Failed" | "TimedOut";
   result: string;
-  source?: "Somnia" | "LLM API";
+  source?: "Somnia" | "LLM API" | "SomniacOS Local";
   missionId?: string;
   outputFormat?: OutputFormat;
   nextActions?: AgentNextAction[];

@@ -796,7 +796,17 @@ async function executeAgent({
       memory
     })
   });
-  const payload = await response.json() as { result?: string; source?: "LLM API"; error?: string; outputFormat?: OutputFormat; nextActions?: AgentNextAction[]; handoffs?: AgentRunRecord["handoffs"]; memoryUpdates?: string[] };
+  const payload = await response.json() as {
+    result?: string;
+    source?: AgentRunRecord["source"];
+    provider?: string;
+    providerError?: string;
+    error?: string;
+    outputFormat?: OutputFormat;
+    nextActions?: AgentNextAction[];
+    handoffs?: AgentRunRecord["handoffs"];
+    memoryUpdates?: string[];
+  };
   if (!response.ok || !payload.result) {
     return {
       requestId,
@@ -809,7 +819,7 @@ async function executeAgent({
       mode: modeLabel,
       status: "Failed",
       result: payload.error ?? "Agent execution failed.",
-      source: "LLM API",
+      source: payload.source ?? "LLM API",
       missionId,
       outputFormat,
       nextActions: buildNextActions(selected.id, task, outputFormat),
@@ -836,7 +846,11 @@ async function executeAgent({
     outputFormat: payload.outputFormat ?? outputFormat,
     nextActions: payload.nextActions ?? buildNextActions(selected.id, task, outputFormat),
     handoffs: payload.handoffs ?? buildAgentHandoffs(selected.id, task),
-    memorySnapshot: payload.memoryUpdates?.join("\n") || memorySnapshot(memory),
+    memorySnapshot: [
+      payload.provider ? `Provider: ${payload.provider}` : "",
+      payload.providerError ? `Provider fallback: ${payload.providerError}` : "",
+      payload.memoryUpdates?.join("\n") || memorySnapshot(memory)
+    ].filter(Boolean).join("\n"),
     createdAt: "",
     completedAt: new Date().toISOString(),
     txHash: hash
