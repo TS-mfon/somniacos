@@ -1,29 +1,87 @@
-# Page Map
+# Frontend Route Map
 
-- `/`: landing page.
-- `/app`: command center.
-- `/app/world`: live world feed.
-- `/app/simulation`: live agent loop panel.
-- `/app/agents`: agent explorer.
-- `/app/agents/[id]`: agent detail.
-- `/app/organizations`: organization directory.
-- `/app/organizations/[id]`: organization dashboard.
-- `/app/marketplace`: marketplace.
-- `/app/marketplace/tasks/[id]`: task detail.
-- `/app/negotiations`: negotiation center.
-- `/app/negotiations/[id]`: negotiation room.
-- `/app/escrow`: escrow center.
-- `/app/payments`: payments ledger.
-- `/app/subscriptions`: subscription agreements.
-- `/app/reputation`: reputation network.
-- `/app/memory`: agent memory explorer.
-- `/app/economy-map`: economy map.
-- `/app/governance`: governance console.
-- `/app/disputes`: dispute court.
-- `/app/security`: security console.
-- `/app/treasury`: treasury console.
-- `/app/partnerships`: partnership registry.
-- `/app/companies/create`: deploy AI company.
-- `/app/agents/create`: deploy agent.
-- `/app/settings`: user and wallet settings.
-- `/app/deployment`: deployment status.
+The Next.js App Router project under `apps/web/app/` ships two surfaces:
+
+1. The marketing landing at `/`.
+2. The application shell at `/app/*`.
+
+Historical routes that were removed during the OS-section consolidation are kept as `redirect()` stubs so previously-shared URLs do not 404.
+
+---
+
+## Live routes
+
+| Path | File | Purpose |
+|------|------|---------|
+| `/` | `apps/web/app/page.tsx` | Landing + live proof card |
+| `/app` | `apps/web/app/app/page.tsx` | `redirect("/app/agent-workbench")` |
+| `/app/agent-workbench` | `apps/web/app/app/agent-workbench/page.tsx` | Mission-driven Workbench; the single live agent runner |
+| `/app/agents` | `apps/web/app/app/agents/page.tsx` | Curated agent catalog from `lib/agent-engine.ts` |
+| `/app/revenue` | `apps/web/app/app/revenue/page.tsx` | Protocol fee dashboard reading `ProtocolFeeVault` directly |
+
+The Workbench is the **only** live agent surface. It:
+
+- Loads `curatedAgents` from `lib/agent-engine.ts`.
+- Hydrates wallet-local memory from `localStorage` (`AgentMemory`).
+- Posts to `/api/agents/run` for an immediate LLM result.
+- Concurrently builds and signs `SomniacAgentRouterV2.launchWorkflowAgentRun(...)`.
+- Polls `/api/onchain/receipt?hash=…` until the transaction is mined.
+- Tails `OSAgentRunCompleted` and merges decoded results into the "Anchored Results" panel.
+
+---
+
+## Redirected routes
+
+All of the following return `redirect("/app/agent-workbench")`. They were once dedicated dashboards before the OS section was removed, and remain only to preserve link integrity.
+
+| Path | Original purpose |
+|------|------------------|
+| `/app/agents/create` | Deploy an agent |
+| `/app/agents/[id]` | Agent detail |
+| `/app/companies/create` | Deploy an AI company |
+| `/app/demo-lab` | Guided onboarding lab |
+| `/app/deployment` | Vercel deployment status |
+| `/app/disputes` | Dispute court |
+| `/app/economy-map` | Economy map |
+| `/app/escrow` | Escrow center |
+| `/app/governance` | Governance console |
+| `/app/marketplace` | Marketplace |
+| `/app/marketplace/tasks/[id]` | Task detail |
+| `/app/memory` | Agent memory explorer |
+| `/app/negotiations` | Negotiation center |
+| `/app/negotiations/[id]` | Negotiation room |
+| `/app/organizations` | Organization directory |
+| `/app/organizations/[id]` | Organization dashboard |
+| `/app/os` | OS Command Center |
+| `/app/os/capabilities` | Capability directory |
+| `/app/os/company` | Autonomous company scenario launcher |
+| `/app/os/processes/[id]` | Judge-facing process console |
+| `/app/os/revenue` | Earlier OS revenue page (replaced by `/app/revenue`) |
+| `/app/partnerships` | Partnership registry |
+| `/app/payments` | Payments ledger |
+| `/app/reputation` | Reputation network |
+| `/app/security` | Security console |
+| `/app/settings` | User + wallet settings |
+| `/app/simulation` | Live agent loop panel |
+| `/app/subscriptions` | Subscription agreements |
+| `/app/treasury` | Treasury console |
+| `/app/world` | Live world feed |
+
+Removing these stubs is a breaking change — leave them in place unless deliberately versioning the UI surface.
+
+---
+
+## SEO & PWA chrome
+
+`apps/web/app/layout.tsx` sets:
+
+- Open Graph and Twitter card metadata pointing at the SomniacOS landing.
+- Apple touch icon, favicon, and theme color.
+- The dark `command-center` palette (signal-cyan accent on `#131313` charcoal).
+
+The landing page exports `<LiveMetrics />` from `apps/web/components/live-economy.tsx`. It reads:
+
+- `/api/onchain/activity` for event counts and the latest block.
+- `/api/os/revenue` for `totalCollected` and `feeRecipient`.
+
+These reads are the only client-side calls from the landing page; they ensure the proof card never displays fake counters.
