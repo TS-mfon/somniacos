@@ -251,6 +251,9 @@ The full lifecycle (events, state machine, ABI), as well as deposit math (`getTo
 
 | File | Purpose |
 |------|---------|
+| [`concepts.md`](concepts.md) | Root-level submission concept file for judges and project reviewers |
+| [`docs/concept.md`](docs/concept.md) | Expanded technical concept, architecture narrative, judging criteria alignment, and demo script |
+| [`docs/presentation.md`](docs/presentation.md) | PowerPoint-ready 1000-word presentation script |
 | [`docs/architecture.md`](docs/architecture.md) | System diagram, request lifecycle, data flow |
 | [`docs/contracts.md`](docs/contracts.md) | Per-contract ABI, events, invariants, security notes |
 | [`docs/api.md`](docs/api.md) | HTTP API reference for `apps/web/app/api/*` |
