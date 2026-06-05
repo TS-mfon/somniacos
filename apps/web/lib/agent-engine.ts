@@ -110,6 +110,7 @@ export type AgentConfidence = {
   score: number;
   label: "Low" | "Medium" | "High";
   reasons: string[];
+  dimensions?: Array<{ label: string; score: number; reason: string }>;
 };
 
 export type AgentNextAction = {
@@ -598,6 +599,144 @@ export const agentMissions: AgentMission[] = [
     task: "Create a safety review for this wallet, transaction, or dApp interaction.",
     constraints: "Make it understandable for a non-technical user. Include red flags, safe actions, and what not to sign.",
     outputFormat: "checklist"
+  },
+  {
+    id: "compare-products",
+    label: "Compare two products",
+    description: "Research-led comparison for crypto tools, SaaS products, or everyday buying decisions.",
+    agentId: "research-analyst",
+    task: "Compare two products, protocols, or tools and recommend which one fits the stated use case.",
+    constraints: "Separate facts, assumptions, tradeoffs, risks, and the final recommendation. Do not invent unavailable specs.",
+    outputFormat: "brief",
+    steps: [
+      {
+        label: "Research comparison",
+        agentId: "research-analyst",
+        task: "Compare the supplied products or tools against the user's stated use case.",
+        constraints: "Use supplied links when available. Separate confirmed facts from assumptions.",
+        outputFormat: "brief",
+        requiresAgentRun: true
+      },
+      {
+        label: "Decision brief",
+        agentId: "productivity-planner",
+        task: "Turn the research comparison into a simple decision brief.",
+        constraints: "Give the user a clear recommendation, rejection criteria, and next step.",
+        outputFormat: "checklist",
+        requiresAgentRun: true,
+        usesPreviousOutput: true
+      }
+    ]
+  },
+  {
+    id: "dao-proposal",
+    label: "Draft DAO proposal",
+    description: "Governance proposal with rationale, execution steps, budget, and voting risks.",
+    agentId: "governance-drafter",
+    task: "Draft a DAO governance proposal from this goal.",
+    constraints: "Include title, summary, motivation, specification, budget, risks, success metrics, and voting guidance.",
+    outputFormat: "plan",
+    steps: [
+      {
+        label: "Proposal draft",
+        agentId: "governance-drafter",
+        task: "Draft the DAO governance proposal.",
+        constraints: "Use clear governance language and include implementation details.",
+        outputFormat: "plan",
+        requiresAgentRun: true
+      },
+      {
+        label: "Treasury review",
+        agentId: "treasury-planner",
+        task: "Review the proposal budget and treasury impact.",
+        constraints: "Flag budget risks, sustainability concerns, and missing assumptions.",
+        outputFormat: "brief",
+        requiresAgentRun: true,
+        usesPreviousOutput: true
+      }
+    ]
+  },
+  {
+    id: "transaction-explainer",
+    label: "Explain transaction",
+    description: "Plain-English transaction review before a user signs.",
+    agentId: "transaction-explainer",
+    task: "Explain what this transaction or contract interaction appears to do.",
+    constraints: "Explain likely action, permissions, value movement, red flags, and what the user should verify before signing.",
+    outputFormat: "checklist"
+  },
+  {
+    id: "defi-risk-review",
+    label: "Review DeFi yield",
+    description: "Risk-first review of a pool, vault, farm, bridge, or strategy.",
+    agentId: "defi-yield-scout",
+    task: "Review this DeFi yield opportunity for risks and operational requirements.",
+    constraints: "No financial advice. Cover smart contract risk, liquidity, emissions, lockups, impermanent loss, bridge risk, and what to verify.",
+    outputFormat: "brief"
+  },
+  {
+    id: "community-launch",
+    label: "Launch community campaign",
+    description: "Create a coordinated campaign plan and publishable community content.",
+    agentId: "marketing-strategist",
+    task: "Plan a community campaign for a product launch.",
+    constraints: "Include campaign objective, channels, posting cadence, incentives, moderation risks, and content examples.",
+    outputFormat: "plan",
+    steps: [
+      {
+        label: "Campaign plan",
+        agentId: "marketing-strategist",
+        task: "Create the community campaign plan.",
+        constraints: "Prioritize practical channels, timing, and measurable outcomes.",
+        outputFormat: "plan",
+        requiresAgentRun: true
+      },
+      {
+        label: "Content pack",
+        agentId: "content-writer",
+        task: "Create publishable campaign content from the approved plan.",
+        constraints: "Include X posts, Discord announcement copy, and a short launch CTA.",
+        outputFormat: "thread",
+        requiresAgentRun: true,
+        usesPreviousOutput: true
+      }
+    ]
+  },
+  {
+    id: "meeting-to-actions",
+    label: "Turn meeting into actions",
+    description: "Converts messy notes into owners, deadlines, risks, and next steps.",
+    agentId: "meeting-summarizer",
+    task: "Turn these meeting notes into a clean action plan.",
+    constraints: "Include decisions, open questions, owners, deadlines, risks, and follow-up message.",
+    outputFormat: "checklist"
+  },
+  {
+    id: "resume-review",
+    label: "Review resume",
+    description: "Career agent review for clarity, positioning, and application fit.",
+    agentId: "career-coach",
+    task: "Review this resume or profile for a target role.",
+    constraints: "Give concrete edits, missing proof points, weak claims, and a stronger summary.",
+    outputFormat: "brief"
+  },
+  {
+    id: "travel-plan",
+    label: "Plan trip",
+    description: "Everyday travel planning with budget, itinerary, and risk notes.",
+    agentId: "travel-planner",
+    task: "Create a practical travel plan for this destination and trip style.",
+    constraints: "Include itinerary, budget assumptions, logistics, safety notes, and what to book first.",
+    outputFormat: "plan"
+  },
+  {
+    id: "study-plan",
+    label: "Create study plan",
+    description: "Learning plan with schedule, resources, practice tasks, and checkpoints.",
+    agentId: "study-tutor",
+    task: "Create a study plan for this topic and timeline.",
+    constraints: "Include daily schedule, milestones, practice tasks, checkpoint tests, and what to skip.",
+    outputFormat: "plan"
   }
 ];
 
@@ -676,13 +815,62 @@ export function memoryToPrompt(memory?: AgentMemory) {
 
 export function scoreAgentRun(run: Pick<AgentRunRecord, "appAgentId" | "task" | "constraints" | "url" | "result" | "source" | "outputFormat" | "status">): AgentConfidence {
   if (run.status !== "Success" || !run.result.trim()) {
-    return { score: 20, label: "Low", reasons: ["The agent did not return a completed usable result."] };
+    return {
+      score: 20,
+      label: "Low",
+      reasons: ["The agent did not return a completed usable result."],
+      dimensions: [
+        { label: "Completion", score: 20, reason: "The run did not complete successfully." },
+        { label: "Live source", score: run.source === "Somnia" || run.source === "LLM API" ? 40 : 10, reason: "The source could not produce a usable result." },
+        { label: "Actionability", score: 15, reason: "No completed output is available to act on." }
+      ]
+    };
+  }
+
+  if (run.source === "SomniacOS Local") {
+    return {
+      score: 32,
+      label: "Low",
+      reasons: ["This result came from the local resilience path, not a live LLM or Somnia callback."],
+      dimensions: [
+        { label: "Live source", score: 10, reason: "Local fallback is not accepted as a live compare answer." },
+        { label: "Specificity", score: Math.min(55, run.result.length > 350 ? 55 : 35), reason: "The output may be structured but is not provider generated." },
+        { label: "Proof", score: 20, reason: "No live provider proof is attached to this output." }
+      ]
+    };
   }
 
   const reasons: string[] = [];
   let score = 35;
   const result = run.result.toLowerCase();
   const agent = findAgent(run.appAgentId);
+  const dimensions = [
+    {
+      label: "Relevance",
+      score: run.task.trim().length > 20 ? 78 : 52,
+      reason: "Measures whether the task was specific enough to judge the response."
+    },
+    {
+      label: "Constraints",
+      score: run.constraints.trim().length > 10 ? 76 : 48,
+      reason: "Measures whether the run included constraints that shaped the answer."
+    },
+    {
+      label: "Depth",
+      score: run.result.length > 700 ? 86 : run.result.length > 350 ? 72 : 48,
+      reason: "Measures whether the output has enough substance for the task."
+    },
+    {
+      label: "Live source",
+      score: run.source === "Somnia" ? 92 : run.source === "LLM API" ? 84 : 22,
+      reason: "Scores whether the answer came from a live agent source."
+    },
+    {
+      label: "Actionability",
+      score: /next|recommend|step|fix|checklist|post|subject|body/i.test(run.result) ? 80 : 58,
+      reason: "Measures whether the result gives the user something usable."
+    }
+  ];
 
   if (run.task.trim().length > 20) {
     score += 10;
@@ -721,7 +909,8 @@ export function scoreAgentRun(run: Pick<AgentRunRecord, "appAgentId" | "task" | 
   return {
     score: bounded,
     label: bounded >= 75 ? "High" : bounded >= 50 ? "Medium" : "Low",
-    reasons: reasons.slice(0, 4)
+    reasons: reasons.slice(0, 4),
+    dimensions
   };
 }
 

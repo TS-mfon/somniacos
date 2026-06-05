@@ -69,18 +69,21 @@ The modal now has a constrained height, scrollable review rows, tighter spacing,
 
 This improves both usability and safety. Users can review the action and still reach the wallet button easily.
 
-## Slide 8: Compare Upgrade
+## Slide 8: Paid Compare Upgrade
 
-Compare is now a clearer multi-agent evaluation tool. The intended behavior is:
+Compare was upgraded from an API-only evaluator into a wallet-backed multi-agent execution surface. This fixes a major product flaw: previously, if the external provider timed out, Compare could show a local resilience answer that looked like a real agent result. That is no longer acceptable for the judging path.
+
+The new Compare behavior is:
 
 1. The user enters one task.
-2. The user selects two or three agents.
-3. The app immediately shows running cards for each selected agent.
-4. The app runs the task against the selected agents through the real `/api/agents/run` API.
-5. The page displays each output side-by-side.
-6. The user compares the results and decides which one is strongest.
+2. The user selects two or three specialist agents.
+3. The app quotes the real Somnia agent fee per selected agent and the total selected cost.
+4. The user signs one Somnia router transaction per selected agent because the current deployed router does not expose a batch compare function.
+5. After all receipts are confirmed, the app runs the selected agents in parallel with strict live-provider mode.
+6. The page displays each output side-by-side only if it came from a live LLM provider or a recoverable Somnia callback.
+7. If the live provider or callback fails, the card displays a real failure state. No local mock output is shown.
 
-We also added a comparison summary that ranks the strongest result using confidence score. Compare is honest about its role: it is API-backed evaluation, not a wallet-signed proof flow. If the user wants proof, they can rerun the chosen task through Workbench.
+This makes Compare judge-safe. It now proves payment, preserves transaction hashes, stores completed runs in History, and gives users a truthful result surface instead of hiding infrastructure failures behind fake-looking text.
 
 ## Slide 9: Receipts And Proof Packaging
 
@@ -99,13 +102,13 @@ Receipts now give SomniacOS a better proof story. A receipt packages key metadat
 
 Receipts do not replace onchain proof. They organize it. This makes it easier for users and judges to inspect what happened after a mission or token launch.
 
-## Slide 10: Confidence Scoring
+## Slide 10: Confidence And Visual Scoring
 
-We added agent confidence scoring. This is not a claim that the output is guaranteed true. It is a usability signal based on how complete and useful the result appears.
+We upgraded confidence scoring from a single number into a more explainable browser-side comparison model. This is not a claim that the output is guaranteed true. It is a usability signal based on how complete, relevant, and usable the result appears.
 
-The score considers task specificity, constraints, output detail, source mode, format alignment, task-agent match, and fallback language. Users see a label like Low, Medium, or High, plus a percentage.
+The score considers task specificity, constraints, output depth, live source quality, actionability, format alignment, task-agent match, and failure language. Compare now renders scoring dimensions such as relevance, constraints, depth, live source, and actionability as visual bars on each result card.
 
-This helps users compare outputs and understand when a result needs more refinement.
+Local resilience output is explicitly capped at low confidence and is not accepted in strict Compare mode. This matters because judges should never see a mock-like fallback competing against real paid agent outputs.
 
 ## Slide 11: Saved User Context
 
@@ -194,9 +197,9 @@ The build remains production-ready and deployable on Vercel.
 
 This week's changes strengthen every judging category.
 
-For **Functionality**, the app has cleaner routes, visible task execution, mission-specific UI, token launch flow, compare output, receipts, docs, and better error recovery.
+For **Functionality**, the app has cleaner routes, visible task execution, mission-specific UI, token launch flow, paid compare output, receipts, docs, and better error recovery.
 
-For **Agent-First Design**, the app now centers around agent profiles, mission templates, agent chain previews, saved context, handoffs, and multi-agent comparison.
+For **Agent-First Design**, the app now centers around agent profiles, mission templates, agent chain previews, saved context, handoffs, and paid multi-agent comparison.
 
 For **Innovation**, SomniacOS now feels more like an agentic operating system: tasks, missions, receipts, confidence, profiles, and proof surfaces work together.
 
@@ -209,7 +212,7 @@ The recommended team demo flow is:
 1. Open the landing page and explain SomniacOS as the Autonomous Economy Layer.
 2. Go to Agents and show public specialist profiles.
 3. Open Workbench and run a simple content or research task.
-4. Open Compare, select two agents, run one task, and show side-by-side outputs.
+4. Open Compare, select two agents, sign the paid Somnia requests, and show side-by-side live outputs or honest failure states.
 5. Open Missions and select Launch Token.
 6. Show the token-specific UI and agent chain preview.
 7. Open Receipts and explain proof packaging.
@@ -217,24 +220,28 @@ The recommended team demo flow is:
 
 This flow shows utility, agent-first design, mission architecture, and judge readiness.
 
-## Slide 19: What Is Still Next
+## Slide 19: New Mission Template Expansion
+
+The mission catalog was expanded to better show SomniacOS as an operating system for both crypto and everyday work. The added templates include product comparison, DAO proposal drafting, transaction explanation, DeFi risk review, community campaign launch, meeting-to-actions, resume review, travel planning, and study planning.
+
+These templates matter because the system should not feel limited to one hackathon demo path. SomniacOS now has a broader set of high-frequency user jobs where specialist agents can perform useful work, chain outputs, or prepare wallet-aware actions.
+
+## Slide 20: What Is Still Next
 
 The next improvements should focus on deeper autonomous execution:
 
-- Multi-step mission execution where each chain step runs automatically.
-- Shareable public receipt links.
-- Better browser-based visual comparison scoring.
-- More mission templates for crypto and everyday tasks.
-- More onchain event anchoring for mission receipts.
-- Optional persistent backend storage beyond local browser storage.
-- Better indexing of Somnia callback events.
+- Multi-step mission execution where each chain step runs automatically after the previous step succeeds.
+- Shareable public receipt links backed by durable storage or encoded receipt payloads.
+- A future Router V3 batch compare function so two or three selected agents can be paid from one wallet signature while preserving per-agent accounting.
+- More onchain event anchoring for mission receipts, compare receipts, and selected winning outputs.
+- Optional persistent backend storage beyond local browser storage for public receipts and team-visible histories.
+- Better indexing of Somnia callback events so the UI can recover pending runs without depending only on browser state.
+- Richer mission templates for crypto operations, creator work, security review, DAO operations, and everyday productivity.
 
-These are extensions. The current product is already clearer, stronger, and easier to pitch than it was at the start of the week.
-
-## Slide 20: Closing
+## Slide 21: Closing
 
 SomniacOS is now positioned as more than an agent marketplace or AI wrapper. It is becoming an agentic economic operating system on Somnia.
 
-This week we made the product cleaner, more functional, more understandable, and more defensible for judging. Workbench handles regular tasks. Missions handles structured workflows. Launch Token is correctly mission-only. Compare shows multiple agent outputs. Receipts preserve proof. Docs explain the system. Agent profiles make the agents feel real.
+This week we made the product cleaner, more functional, more understandable, and more defensible for judging. Workbench handles regular tasks. Missions handles structured workflows. Launch Token is correctly mission-only. Compare now requires paid Somnia requests and rejects mock fallback outputs. Receipts preserve proof. Docs explain the system. Agent profiles make the agents feel real.
 
 The pitch is now simple: SomniacOS lets users run autonomous agent work on Somnia with useful outputs, wallet-aware actions, structured missions, and proof-ready receipts.

@@ -22,6 +22,7 @@ type RunRequest = {
   outputFormat?: OutputFormat;
   memory?: AgentMemory;
   previousResult?: string;
+  executionMode?: "strict" | "resilient";
 };
 
 type ResponsesPayload = {
@@ -76,6 +77,7 @@ export async function POST(request: Request) {
     ].filter(Boolean).join("\n\n");
 
     const apiKey = process.env.OPENAI_API_KEY;
+    const strictExecution = body.executionMode === "strict";
     if (!apiKey) {
       const fallbackMeta = {
         agentName: agent.name,
@@ -86,15 +88,14 @@ export async function POST(request: Request) {
         memory: body.memory,
         references
       };
-      const result = await runWithEmergencyFallback(
-        () => runPublicLlmFallback(system, user),
-        fallbackMeta
-      );
+      const result = strictExecution
+        ? await runStrictPublicLlm(system, user)
+        : await runWithEmergencyFallback(() => runPublicLlmFallback(system, user), fallbackMeta);
       return Response.json({
         result: result.text,
         source: result.source,
         provider: result.provider,
-        providerError: result.providerError,
+        providerError: "providerError" in result ? result.providerError : undefined,
         outputFormat,
         nextActions: buildNextActions(agent.id, task, outputFormat),
         handoffs: buildAgentHandoffs(agent.id, task),
@@ -139,6 +140,9 @@ export async function POST(request: Request) {
       references: references.map((item) => ({ url: item.url, ok: item.ok }))
     });
   } catch (error) {
+    if (error instanceof StrictAgentError) {
+      return Response.json({ error: error.message, providerError: error.providerError }, { status: 503 });
+    }
     return Response.json({ error: error instanceof Error ? error.message : "Agent execution failed." }, { status: 500 });
   }
 }
@@ -152,6 +156,28 @@ type FallbackMeta = {
   memory?: AgentMemory;
   references: Awaited<ReturnType<typeof fetchReferences>>;
 };
+
+async function runStrictPublicLlm(system: string, user: string) {
+  try {
+    return {
+      text: await runPublicLlmFallback(system, user),
+      source: "LLM API" as const,
+      provider: "pollinations"
+    };
+  } catch (error) {
+    const providerError = error instanceof Error ? error.message : "External LLM provider failed.";
+    throw new StrictAgentError(
+      "Live LLM provider is unavailable. Compare mode does not use local fallback, so no mock result was returned.",
+      providerError
+    );
+  }
+}
+
+class StrictAgentError extends Error {
+  constructor(message: string, readonly providerError: string) {
+    super(message);
+  }
+}
 
 async function runWithEmergencyFallback(run: () => Promise<string>, meta: FallbackMeta) {
   try {
