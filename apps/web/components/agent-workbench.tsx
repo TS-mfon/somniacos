@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Address, type Hash } from "viem";
+import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, formatUnits, http, isAddress, keccak256, parseEther, parseUnits, toHex, type Address, type Hash } from "viem";
 import { AlertTriangle, Brain, CheckCircle2, Clock3, Copy, ExternalLink, GitBranch, Loader2, RadioTower, Sparkles, X } from "lucide-react";
 import { useOnchainActivity } from "./live-economy";
 import { useSomniaWallet } from "./wallet-button";
-import { osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi } from "../lib/contracts";
+import { extensionContracts, osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi, somniacTokenFactoryAbi } from "../lib/contracts";
 import {
   agentMissions,
   buildAgentHandoffs,
@@ -22,6 +22,7 @@ import {
   type CuratedAgent,
   type OutputFormat
 } from "../lib/agent-engine";
+import { loadRunHistory, upsertRunHistory } from "../lib/history-store";
 import { summarizeError } from "../lib/onchain-state";
 
 const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
@@ -73,6 +74,22 @@ type WorkbenchTx = {
   action?: string;
 };
 
+type TokenLaunchForm = {
+  name: string;
+  symbol: string;
+  decimals: string;
+  initialSupply: string;
+  owner: string;
+  metadataURI: string;
+};
+
+type SentinelIntent = {
+  kind: "agent-run" | "token-deploy";
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+  onConfirm: () => void;
+};
+
 const activePhases = new Set<RunPhase>(["wallet", "network", "quote", "signature", "receipt", "agent", "callback"]);
 const statusSteps: Array<{ phase: RunPhase; label: string }> = [
   { phase: "wallet", label: "Wallet" },
@@ -102,6 +119,15 @@ export function AgentWorkbench() {
   const [resultModal, setResultModal] = useState<AgentRunRecord | null>(null);
   const [tx, setTx] = useState<WorkbenchTx>({ phase: "idle", status: "Ready" });
   const [localRuns, setLocalRuns] = useState<AgentRunRecord[]>([]);
+  const [sentinel, setSentinel] = useState<SentinelIntent | null>(null);
+  const [tokenForm, setTokenForm] = useState<TokenLaunchForm>({
+    name: "Somnia Agent Token",
+    symbol: "SAT",
+    decimals: "18",
+    initialSupply: "1000000",
+    owner: "",
+    metadataURI: "somniacos://token/agent-token"
+  });
 
   const selected = useMemo(() => curatedAgents.find((agent) => agent.id === agentId) ?? curatedAgents[0], [agentId]);
   const selectedMission = useMemo(() => agentMissions.find((mission) => mission.id === missionId) ?? agentMissions[0], [missionId]);
@@ -110,6 +136,8 @@ export function AgentWorkbench() {
   const urls = useMemo(() => allUrls.slice(0, 3), [allUrls]);
   const mode = urls.length ? 1 : 0;
   const routerConfigured = osKernelEnabled && osKernelConfigured && Boolean(osContracts.SomniacAgentRouterV2);
+  const tokenFactoryConfigured = extensionContracts.SomniacTokenFactory !== "0x0000000000000000000000000000000000000000";
+  const isTokenMission = missionId === "launch-token" || selected.id === "token-launcher";
   const isRunning = activePhases.has(tx.phase);
 
   const completedFromEvents = useMemo(() => {
@@ -162,14 +190,7 @@ export function AgentWorkbench() {
       const agent = curatedAgents.find((item) => item.id === param);
       if (agent) applyAgent(agent);
     }
-    const stored = window.localStorage.getItem("somniacos.agentRuns");
-    if (stored) {
-      try {
-        setLocalRuns(JSON.parse(stored) as AgentRunRecord[]);
-      } catch {
-        setLocalRuns([]);
-      }
-    }
+    setLocalRuns(loadRunHistory());
     const storedMemory = window.localStorage.getItem("somniacos.agentMemory");
     if (storedMemory) {
       try {
@@ -178,6 +199,7 @@ export function AgentWorkbench() {
         setMemory(defaultMemory());
       }
     }
+    setTokenForm((current) => ({ ...current, owner: window.ethereum ? current.owner : "" }));
   }, []);
 
   useEffect(() => {
@@ -270,6 +292,38 @@ export function AgentWorkbench() {
   }
 
   async function runAgent() {
+    try {
+      setTx({ phase: "wallet", status: "Checking wallet and task details" });
+      if (!routerConfigured) throw new Error("SomniacOS fee router is not deployed yet.");
+      validateWorkbenchInput(goal, constraints, allUrls);
+      const account = await ensureWalletReady();
+      if (!deposit) throw new Error("Unable to quote the transaction. Try again in a moment.");
+      if (wallet.balance && parseEther(wallet.balance) < deposit) throw new Error(`Insufficient STT. This request needs ${formatEther(deposit)} STT plus gas.`);
+      setSentinel({
+        kind: "agent-run",
+        title: `Run ${selected.role}`,
+        rows: [
+          { label: "Network", value: somnia.name },
+          { label: "Signer", value: account },
+          { label: "Contract", value: osContracts.SomniacAgentRouterV2 },
+          { label: "Agent", value: `${selected.name} / ${selected.role}` },
+          { label: "Capability", value: capabilityByAgent[selected.id] ?? "content.write" },
+          { label: "Mode", value: mode === 1 ? "Website parser" : "LLM inference" },
+          { label: "Total due", value: `${formatEther(deposit)} STT` },
+          { label: "Protocol fee", value: "0.1 STT included" }
+        ],
+        onConfirm: () => {
+          setSentinel(null);
+          void executeAgentWorkflow();
+        }
+      });
+      setTx({ phase: "signature", status: "Review the Security Sentinel, then open your wallet." });
+    } catch (error) {
+      setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
+    }
+  }
+
+  async function executeAgentWorkflow() {
     try {
       setTx({ phase: "wallet", status: "Checking wallet and task details" });
       if (!routerConfigured) throw new Error("SomniacOS fee router is not deployed yet.");
@@ -382,11 +436,111 @@ export function AgentWorkbench() {
   }
 
   function saveRun(item: AgentRunRecord) {
-    setLocalRuns((current) => {
-      const next = [item, ...current.filter((existing) => existing.requestId !== item.requestId)].slice(0, 20);
-      window.localStorage.setItem("somniacos.agentRuns", JSON.stringify(next));
-      return next;
-    });
+    setLocalRuns(upsertRunHistory(item));
+  }
+
+  async function prepareTokenDeploy() {
+    try {
+      setTx({ phase: "wallet", status: "Checking wallet and token details" });
+      if (!tokenFactoryConfigured) throw new Error("SomniacOS token factory is not deployed yet.");
+      const account = await ensureWalletReady();
+      const params = normalizeTokenForm(tokenForm, account);
+      setTokenForm((current) => ({ ...current, owner: params.owner }));
+      setSentinel({
+        kind: "token-deploy",
+        title: `Deploy ${params.symbol}`,
+        rows: [
+          { label: "Network", value: somnia.name },
+          { label: "Signer", value: account },
+          { label: "Factory", value: extensionContracts.SomniacTokenFactory },
+          { label: "Name", value: params.name },
+          { label: "Symbol", value: params.symbol },
+          { label: "Decimals", value: String(params.decimals) },
+          { label: "Initial supply", value: `${params.initialSupply} ${params.symbol}` },
+          { label: "Owner", value: params.owner },
+          { label: "Private key", value: "Never shared. Your wallet signs the deployment." }
+        ],
+        onConfirm: () => {
+          setSentinel(null);
+          void deployToken();
+        }
+      });
+      setTx({ phase: "signature", status: "Review the token deployment, then open your wallet." });
+    } catch (error) {
+      setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
+    }
+  }
+
+  async function deployToken() {
+    try {
+      setTx({ phase: "wallet", status: "Preparing token deployment" });
+      if (!tokenFactoryConfigured) throw new Error("SomniacOS token factory is not deployed yet.");
+      const account = await ensureWalletReady();
+      const params = normalizeTokenForm(tokenForm, account);
+      const initialSupply = parseUnits(params.initialSupply, params.decimals);
+      const data = encodeFunctionData({
+        abi: somniacTokenFactoryAbi,
+        functionName: "createToken",
+        args: [params.name, params.symbol, params.decimals, initialSupply, params.owner as Address, params.metadataURI]
+      });
+      const transaction = {
+        account,
+        to: extensionContracts.SomniacTokenFactory as Address,
+        data
+      } as const;
+      setTx({ phase: "signature", status: "Estimating gas and opening your wallet for token deployment" });
+      const gasEstimate = await publicClient.estimateGas(transaction);
+      const client = createWalletClient({ chain: somnia, transport: walletClient() });
+      const hash = await client.sendTransaction({ ...transaction, gas: bufferedGas(gasEstimate) });
+      setTx({ phase: "receipt", status: "Token deployment submitted. Waiting for receipt.", hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+      if (receipt.status !== "success") throw new Error("Token deployment reverted.");
+      const artifact = extractTokenCreated(receipt.logs);
+      if (!artifact) throw new Error("Token deployed, but TokenCreated event was not found.");
+      const run: AgentRunRecord = {
+        requestId: `token-${artifact.tokenAddress.slice(2, 10)}`,
+        user: account,
+        appAgentId: "token-launcher",
+        task: "Deploy a fixed-supply Somnia testnet token.",
+        constraints: "Non-custodial wallet-signed token deployment through SomniacOS token factory.",
+        url: "",
+        somniaAgentId: "",
+        mode: "LLM",
+        status: "Success",
+        result: [
+          `${artifact.name} (${artifact.symbol}) deployed successfully on Somnia Shannon.`,
+          `Token address: ${artifact.tokenAddress}`,
+          `Owner: ${artifact.owner}`,
+          `Initial supply: ${formatUnits(BigInt(artifact.initialSupply), artifact.decimals)} ${artifact.symbol}`,
+          "The user signed this deployment with their own wallet. No private key was shared."
+        ].join("\n"),
+        source: "Somnia",
+        missionId: "launch-token",
+        outputFormat: "checklist",
+        createdAt: "",
+        completedAt: new Date().toISOString(),
+        txHash: hash,
+        artifact: {
+          type: "token",
+          tokenAddress: artifact.tokenAddress,
+          name: artifact.name,
+          symbol: artifact.symbol,
+          decimals: artifact.decimals,
+          initialSupply: formatUnits(BigInt(artifact.initialSupply), artifact.decimals),
+          owner: artifact.owner,
+          deployer: artifact.deployer,
+          metadataURI: artifact.metadataURI,
+          txHash: hash
+        }
+      };
+      saveRun(run);
+      setActiveRun(run);
+      setResultModal(run);
+      setTx({ phase: "success", status: "Token deployed. Details are visible here and saved to History.", hash });
+      await refresh(account);
+    } catch (error) {
+      setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
+    }
   }
 
   const categories = Array.from(new Set(curatedAgents.map((agent) => agent.category)));
@@ -439,6 +593,15 @@ export function AgentWorkbench() {
               {outputFormats.map((format) => <option key={format.id} value={format.id}>{format.label} - {format.description}</option>)}
             </select>
           </label>
+          {isTokenMission ? (
+            <TokenLaunchPanel
+              form={tokenForm}
+              configured={tokenFactoryConfigured}
+              onChange={setTokenForm}
+              onDeploy={prepareTokenDeploy}
+              disabled={isRunning}
+            />
+          ) : null}
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">One transaction total</span>
@@ -494,8 +657,37 @@ export function AgentWorkbench() {
 
       {latestResult ? <LatestResult run={latestResult} onNextAction={runNextAction} /> : null}
       <MissionTimeline runs={localRuns} activeMissionId={missionId} />
-      <AnchoredResults results={anchoredResults} onNextAction={runNextAction} />
       {resultModal ? <ResultModal run={resultModal} onClose={() => setResultModal(null)} /> : null}
+      {sentinel ? <SecuritySentinel intent={sentinel} onClose={() => setSentinel(null)} /> : null}
+    </div>
+  );
+}
+
+function TokenLaunchPanel({ form, configured, disabled, onChange, onDeploy }: { form: TokenLaunchForm; configured: boolean; disabled: boolean; onChange: (next: TokenLaunchForm) => void; onDeploy: () => void }) {
+  return (
+    <div className="rounded-2xl border border-signal/20 bg-signal/10 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-signal">Token launch</p>
+          <p className="mt-2 text-sm leading-6 text-white/58">The agent prepares the launch. Your wallet signs the factory deployment. Private keys are never shared.</p>
+        </div>
+        <span className={`rounded-full border px-3 py-1 font-mono text-[11px] ${configured ? "border-signal/30 text-signal" : "border-ember/30 text-ember"}`}>{configured ? "Factory ready" : "Factory not deployed"}</span>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <MemoryInput label="Token name" value={form.name} onChange={(value) => onChange({ ...form, name: value })} />
+        <MemoryInput label="Symbol" value={form.symbol} onChange={(value) => onChange({ ...form, symbol: value })} />
+        <MemoryInput label="Decimals" value={form.decimals} onChange={(value) => onChange({ ...form, decimals: value })} />
+        <MemoryInput label="Initial supply" value={form.initialSupply} onChange={(value) => onChange({ ...form, initialSupply: value })} />
+        <div className="md:col-span-2">
+          <MemoryInput label="Owner address optional" value={form.owner} onChange={(value) => onChange({ ...form, owner: value })} />
+        </div>
+        <div className="md:col-span-2">
+          <MemoryInput label="Metadata URI" value={form.metadataURI} onChange={(value) => onChange({ ...form, metadataURI: value })} />
+        </div>
+      </div>
+      <button onClick={onDeploy} disabled={disabled || !configured} className="mt-4 inline-flex w-full items-center justify-center rounded-xl border border-signal/30 bg-black/25 px-4 py-3 text-sm font-semibold text-signal disabled:cursor-not-allowed disabled:opacity-50">
+        Deploy token with wallet
+      </button>
     </div>
   );
 }
@@ -583,6 +775,35 @@ function ResultStudio({ run, compact = false }: { run: AgentRunRecord; compact?:
         <button onClick={() => void navigator.clipboard?.writeText(run.result)} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 font-mono text-[11px] text-white/45 hover:text-white"><Copy className="h-3 w-3" /> copy</button>
       </div>
       <p className="whitespace-pre-wrap text-sm leading-7 text-white/82">{run.result}</p>
+    </div>
+  );
+}
+
+function SecuritySentinel({ intent, onClose }: { intent: SentinelIntent; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/72 p-4 backdrop-blur">
+      <section className="w-full max-w-2xl rounded-[1.5rem] border border-signal/25 bg-[#131313] p-5 shadow-[0_0_80px_rgba(0,255,194,0.14)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Security Sentinel</p>
+            <h2 className="mt-3 text-3xl font-semibold text-white">{intent.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-white/52">Review this action before the wallet opens. SomniacOS never asks for private keys or seed phrases.</p>
+          </div>
+          <button onClick={onClose} className="rounded-full border border-white/10 p-2 text-white/60 hover:text-white"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="mt-5 grid gap-2">
+          {intent.rows.map((row) => (
+            <div key={row.label} className="rounded-xl border border-white/10 bg-black/25 p-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">{row.label}</p>
+              <p className="mt-1 break-all text-sm text-white/75">{row.value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button onClick={intent.onConfirm} className="rounded-xl bg-signal px-5 py-3 text-sm font-semibold text-black">Open wallet</button>
+          <button onClick={onClose} className="rounded-xl border border-white/10 px-5 py-3 text-sm text-white/62 hover:text-white">Cancel</button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -685,6 +906,23 @@ function validateWorkbenchInput(goal: string, constraints: string, urls: string[
   }
 }
 
+function normalizeTokenForm(form: TokenLaunchForm, fallbackOwner: Address) {
+  const name = form.name.trim();
+  const symbol = form.symbol.trim().toUpperCase();
+  const decimals = Number.parseInt(form.decimals, 10);
+  const initialSupply = form.initialSupply.trim();
+  const owner = (form.owner.trim() || fallbackOwner) as Address;
+  const metadataURI = form.metadataURI.trim() || `somniacos://token/${symbol.toLowerCase()}`;
+  if (!name) throw new Error("Token name is required.");
+  if (name.length > 64) throw new Error("Token name is too long.");
+  if (!symbol) throw new Error("Token symbol is required.");
+  if (symbol.length > 12) throw new Error("Token symbol is too long.");
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) throw new Error("Token decimals must be between 0 and 18.");
+  if (!initialSupply || Number(initialSupply) <= 0) throw new Error("Initial supply must be greater than zero.");
+  if (!isAddress(owner)) throw new Error("Owner address is invalid.");
+  return { name, symbol, decimals, initialSupply, owner, metadataURI };
+}
+
 function recommendedAction(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   if (message.includes("rejected") || message.includes("denied")) return "Nothing was submitted. Click Run agent again and approve the wallet prompt.";
@@ -729,6 +967,40 @@ function extractRequestId(logs: readonly { address: Address; data: `0x${string}`
     }
   }
   return "";
+}
+
+function extractTokenCreated(logs: readonly { address: Address; data: `0x${string}`; topics: readonly [`0x${string}`, ...`0x${string}`[]] | readonly [] }[]) {
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== extensionContracts.SomniacTokenFactory.toLowerCase()) continue;
+    try {
+      const decoded = decodeEventLog({ abi: somniacTokenFactoryAbi, data: log.data, topics: [...log.topics] });
+      if (decoded.eventName === "TokenCreated") {
+        const args = decoded.args as {
+          token: Address;
+          owner: Address;
+          deployer: Address;
+          name: string;
+          symbol: string;
+          decimals: number;
+          initialSupply: bigint;
+          metadataURI: string;
+        };
+        return {
+          tokenAddress: args.token,
+          owner: args.owner,
+          deployer: args.deployer,
+          name: args.name,
+          symbol: args.symbol,
+          decimals: Number(args.decimals),
+          initialSupply: args.initialSupply.toString(),
+          metadataURI: args.metadataURI
+        };
+      }
+    } catch {
+      // Ignore non-token-factory events in the same transaction.
+    }
+  }
+  return null;
 }
 
 async function readRun(requestId: string, txHash?: Hash): Promise<AgentRunRecord> {

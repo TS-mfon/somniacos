@@ -19,7 +19,8 @@
     "healthcheck": "tsx scripts/healthcheck.ts",
     "contracts:test": "pnpm --filter @somniacos/contracts test",
     "contracts:deploy": "tsx scripts/deploy-contracts.ts",
-    "contracts:deploy:os": "tsx scripts/deploy-os-kernel.ts"
+    "contracts:deploy:os": "tsx scripts/deploy-os-kernel.ts",
+    "contracts:deploy:token-factory": "tsx scripts/deploy-token-factory.ts"
   },
   "dependencies": {
     "next": "^15.1.2",

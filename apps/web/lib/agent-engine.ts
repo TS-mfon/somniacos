@@ -20,7 +20,8 @@ export type AgentTaskType =
   | "study"
   | "career"
   | "meeting"
-  | "productivity";
+  | "productivity"
+  | "token-launch";
 
 export type CuratedAgent = {
   id: string;
@@ -56,6 +57,13 @@ export type AgentRunRecord = {
   createdAt: string;
   completedAt: string;
   txHash?: string;
+  processId?: string;
+  stepId?: string;
+  missionRunId?: string;
+  stepIndex?: number;
+  stepLabel?: string;
+  parentRequestId?: string;
+  artifact?: AgentArtifact;
 };
 
 export type OutputFormat = "auto" | "x-post" | "thread" | "brief" | "audit" | "checklist" | "email" | "plan";
@@ -68,6 +76,18 @@ export type AgentMission = {
   task: string;
   constraints: string;
   outputFormat: OutputFormat;
+  steps?: AgentMissionStep[];
+};
+
+export type AgentMissionStep = {
+  label: string;
+  agentId: string;
+  task: string;
+  constraints: string;
+  outputFormat: OutputFormat;
+  requiresAgentRun: boolean;
+  requiresWalletAction?: "token-deploy";
+  usesPreviousOutput?: boolean;
 };
 
 export type AgentMemory = {
@@ -90,9 +110,60 @@ export type AgentHandoff = {
   agentId: string;
   reason: string;
   task: string;
+  requiresSignature?: boolean;
+  usesPreviousOutput?: boolean;
+};
+
+export type AgentArtifact =
+  | {
+      type: "token";
+      tokenAddress: string;
+      name: string;
+      symbol: string;
+      decimals: number;
+      initialSupply: string;
+      owner: string;
+      deployer: string;
+      metadataURI: string;
+      txHash: string;
+    }
+  | {
+      type: "receipt";
+      receiptId: string;
+      resultHash: string;
+    };
+
+export type AgentProofReceipt = {
+  receiptId: string;
+  requestId?: string;
+  processId?: string;
+  stepId?: string;
+  missionRunId?: string;
+  agentId: string;
+  actionType: "agent.run" | "token.launch" | "mission.step";
+  source: AgentRunRecord["source"] | "TokenFactory";
+  txHash?: string;
+  resultHash?: string;
+  tokenAddress?: string;
+  feePaid?: string;
+  chainId: 50312;
+  createdAt: string;
 };
 
 export const curatedAgents: CuratedAgent[] = [
+  {
+    id: "token-launcher",
+    name: "Mint Architect",
+    role: "Token Launch Agent",
+    taskType: "token-launch",
+    skills: ["token deployment", "parameter review", "launch proof"],
+    promise: "Prepares non-custodial token launches, explains the signing action, and records token details after deployment.",
+    examples: ["Launch testnet token", "Review token params", "Generate token launch summary"],
+    onchainMatch: ["token", "deploy", "launch"],
+    category: "Crypto",
+    defaultTask: "Prepare a fixed-supply testnet token launch on Somnia.",
+    defaultConstraints: "Never ask for a private key. Validate token name, symbol, supply, owner, and explain the wallet transaction."
+  },
   {
     id: "marketing-strategist",
     name: "Vector Marketing",
@@ -368,13 +439,88 @@ export const outputFormats: Array<{ id: OutputFormat; label: string; description
 
 export const agentMissions: AgentMission[] = [
   {
+    id: "launch-token",
+    label: "Launch Token",
+    description: "Plan, review, deploy, and package a non-custodial Somnia testnet token launch.",
+    agentId: "token-launcher",
+    task: "Prepare a fixed-supply testnet token launch on Somnia.",
+    constraints: "Do not ask for private keys. Explain token parameters, deployment risks, wallet signature, and post-deploy next steps.",
+    outputFormat: "checklist",
+    steps: [
+      {
+        label: "Plan token",
+        agentId: "token-launcher",
+        task: "Review and prepare the token launch parameters.",
+        constraints: "Validate name, symbol, decimals, supply, owner, and metadata. Do not ask for a private key.",
+        outputFormat: "checklist",
+        requiresAgentRun: true
+      },
+      {
+        label: "Review tokenomics",
+        agentId: "token-researcher",
+        task: "Review tokenomics and launch risks for the planned token.",
+        constraints: "No financial advice. Explain supply, positioning, risks, and unknowns.",
+        outputFormat: "brief",
+        requiresAgentRun: true,
+        usesPreviousOutput: true
+      },
+      {
+        label: "Deploy token",
+        agentId: "token-launcher",
+        task: "Deploy the fixed-supply token through the SomniacOS token factory.",
+        constraints: "Use the connected wallet only. Show token details after receipt confirmation.",
+        outputFormat: "checklist",
+        requiresAgentRun: false,
+        requiresWalletAction: "token-deploy",
+        usesPreviousOutput: true
+      },
+      {
+        label: "Write launch copy",
+        agentId: "content-writer",
+        task: "Write launch copy for the deployed Somnia testnet token.",
+        constraints: "Use deployed token details and keep claims factual.",
+        outputFormat: "x-post",
+        requiresAgentRun: true,
+        usesPreviousOutput: true
+      }
+    ]
+  },
+  {
     id: "crypto-founder-launch",
     label: "Launch my crypto project",
     description: "Marketing strategy, content direction, and practical launch next steps.",
     agentId: "marketing-strategist",
     task: "Create a seven-day launch mission for my crypto product.",
     constraints: "Use my saved memory if available. Include positioning, audience, launch channels, content calendar, risks, and next agent handoffs.",
-    outputFormat: "plan"
+    outputFormat: "plan",
+    steps: [
+      {
+        label: "Strategy",
+        agentId: "marketing-strategist",
+        task: "Create a seven-day launch mission for my crypto product.",
+        constraints: "Include positioning, channels, content calendar, risks, and next agent handoffs.",
+        outputFormat: "plan",
+        requiresAgentRun: true
+      },
+      {
+        label: "Research",
+        agentId: "research-analyst",
+        task: "Validate the launch strategy with market and competitor assumptions.",
+        constraints: "Separate facts, assumptions, risks, and what to verify next.",
+        outputFormat: "brief",
+        requiresAgentRun: true,
+        usesPreviousOutput: true
+      },
+      {
+        label: "Content",
+        agentId: "content-writer",
+        task: "Turn the launch strategy and research into publishable X content.",
+        constraints: "Keep the content concise and ready to publish.",
+        outputFormat: "thread",
+        requiresAgentRun: true,
+        usesPreviousOutput: true
+      }
+    ]
   },
   {
     id: "token-due-diligence",
@@ -432,6 +578,25 @@ export function defaultMemory(): AgentMemory {
     context: "",
     preferences: "",
     lastUpdated: ""
+  };
+}
+
+export function createProofReceipt(run: AgentRunRecord, actionType: AgentProofReceipt["actionType"] = run.artifact?.type === "token" ? "token.launch" : run.stepIndex !== undefined ? "mission.step" : "agent.run"): AgentProofReceipt {
+  return {
+    receiptId: `${actionType}:${run.requestId || run.artifact?.type || run.txHash || Date.now()}`,
+    requestId: run.requestId,
+    processId: run.processId,
+    stepId: run.stepId,
+    missionRunId: run.missionRunId,
+    agentId: run.appAgentId,
+    actionType,
+    source: run.artifact?.type === "token" ? "TokenFactory" : run.source ?? "SomniacOS Local",
+    txHash: run.txHash,
+    resultHash: run.result ? `local:${run.result.length}:${run.result.slice(0, 24)}` : undefined,
+    tokenAddress: run.artifact?.type === "token" ? run.artifact.tokenAddress : undefined,
+    feePaid: undefined,
+    chainId: 50312,
+    createdAt: run.completedAt || run.createdAt || new Date().toISOString()
   };
 }
 

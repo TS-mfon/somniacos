@@ -53,7 +53,8 @@ const eventLabels: Record<string, string> = {
   AgentHandoff: "Agent handoff recorded",
   ProcessEvaluation: "Process evaluation recorded",
   OSAgentRunRequested: "OS agent run requested",
-  OSAgentRunCompleted: "OS agent run completed"
+  OSAgentRunCompleted: "OS agent run completed",
+  TokenCreated: "Token created"
 };
 
 const seededTransactionHashes = [

@@ -21,6 +21,7 @@ type RunRequest = {
   missionId?: string;
   outputFormat?: OutputFormat;
   memory?: AgentMemory;
+  previousResult?: string;
 };
 
 type ResponsesPayload = {
@@ -44,12 +45,14 @@ export async function POST(request: Request) {
 
     const task = body.task?.trim() ?? "";
     const constraints = body.constraints?.trim() ?? "";
+    const previousResult = body.previousResult?.trim() ?? "";
     const urls = (body.urls ?? []).map((url) => url.trim()).filter(Boolean).slice(0, 3);
     const outputFormat = inferOutputFormat(agent, body.outputFormat ?? "auto");
     const memoryContext = memoryToPrompt(body.memory);
     if (!task) return Response.json({ error: "Enter a task for the agent." }, { status: 400 });
     if (task.length > 2800) return Response.json({ error: "Task is too long. Keep it under 2,800 characters." }, { status: 400 });
     if (constraints.length > 1600) return Response.json({ error: "Constraints are too long. Keep them under 1,600 characters." }, { status: 400 });
+    if (previousResult.length > 5000) return Response.json({ error: "Previous result is too long. Keep it under 5,000 characters." }, { status: 400 });
 
     const references = await fetchReferences(urls);
     const system = [
@@ -65,6 +68,7 @@ export async function POST(request: Request) {
       body.missionId ? `Mission: ${body.missionId}` : "",
       `Task: ${task}`,
       constraints ? `Constraints: ${constraints}` : "",
+      previousResult ? `Previous agent output to continue from:\n${previousResult}` : "",
       memoryContext ? `Saved user memory:\n${memoryContext}` : "",
       body.requestId ? `SomniacOS request id: ${body.requestId}` : "",
       body.txHash ? `Signed transaction: ${body.txHash}` : "",

@@ -39,6 +39,10 @@ export const osContracts = {
   SomniacAgentRouterV2: process.env.NEXT_PUBLIC_SOMNIAC_AGENT_ROUTER_V2 ?? "0xe426357cc73f67efa9bc5741b4875a6a52a55c99"
 } as const;
 
+export const extensionContracts = {
+  SomniacTokenFactory: process.env.NEXT_PUBLIC_SOMNIAC_TOKEN_FACTORY ?? "0x3b9d345511d7ea0f84b46058b389d9d0c9fe04a0"
+} as const;
+
 export const osKernelEnabled = process.env.NEXT_PUBLIC_ENABLE_OS_KERNEL !== "false";
 export const osKernelConfigured = Object.values(osContracts).every((address) => address !== zeroAddress);
 
@@ -191,6 +195,14 @@ export const somniacAgentRouterV2Abi = [
   { type: "event", name: "OSAgentRunCompleted", inputs: [{ indexed: true, name: "processId", type: "uint256" }, { indexed: true, name: "stepId", type: "uint256" }, { indexed: true, name: "requestId", type: "uint256" }, { indexed: false, name: "status", type: "uint8" }, { indexed: false, name: "result", type: "string" }] }
 ] as const;
 
+export const somniacTokenFactoryAbi = [
+  { type: "function", name: "createToken", stateMutability: "nonpayable", inputs: [{ name: "name", type: "string" }, { name: "symbol", type: "string" }, { name: "decimals", type: "uint8" }, { name: "initialSupply", type: "uint256" }, { name: "owner", type: "address" }, { name: "metadataURI", type: "string" }], outputs: [{ name: "token", type: "address" }] },
+  { type: "function", name: "allTokensLength", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "tokensByOwnerLength", stateMutability: "view", inputs: [{ name: "owner", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "isSomniacToken", stateMutability: "view", inputs: [{ name: "token", type: "address" }], outputs: [{ name: "", type: "bool" }] },
+  { type: "event", name: "TokenCreated", inputs: [{ indexed: true, name: "token", type: "address" }, { indexed: true, name: "owner", type: "address" }, { indexed: true, name: "deployer", type: "address" }, { indexed: false, name: "name", type: "string" }, { indexed: false, name: "symbol", type: "string" }, { indexed: false, name: "decimals", type: "uint8" }, { indexed: false, name: "initialSupply", type: "uint256" }, { indexed: false, name: "metadataURI", type: "string" }] }
+] as const;
+
 export const contractCatalog = [
   { key: "AgentRegistry", address: contracts.AgentRegistry, abi: agentRegistryAbi },
   { key: "OrganizationRegistry", address: contracts.OrganizationRegistry, abi: organizationRegistryAbi },
@@ -215,4 +227,8 @@ export const osContractCatalog = [
   { key: "SomniacAgentRouterV2", address: osContracts.SomniacAgentRouterV2, abi: somniacAgentRouterV2Abi }
 ].filter((contract) => contract.address !== zeroAddress);
 
-export const fullContractCatalog = [...contractCatalog, ...osContractCatalog] as const;
+export const extensionContractCatalog = [
+  { key: "SomniacTokenFactory", address: extensionContracts.SomniacTokenFactory, abi: somniacTokenFactoryAbi }
+].filter((contract) => contract.address !== zeroAddress);
+
+export const fullContractCatalog = [...contractCatalog, ...osContractCatalog, ...extensionContractCatalog] as const;

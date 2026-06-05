@@ -72,6 +72,12 @@ The Agents page lists usable specialist agents. The project deliberately removed
 
 The Workbench is the main shell. It lets users run an agent, sign the transaction, receive results, view proof, copy outputs, and continue with handoffs. It supports mission presets, output formats, saved memory, URL references, error recovery, transaction state, and anchored results.
 
+The `Launch Token` mission adds a non-custodial deployment flow. The agent prepares token parameters and explains the risk. The connected wallet signs a transaction to `SomniacTokenFactory`. After confirmation, the dApp decodes the receipt and shows token address, owner, supply, and transaction proof. Users never share private keys.
+
+### History
+
+The History page keeps the Workbench clean by moving completed outputs, receipts, token launches, and previous mission records into a separate archive. The Workbench focuses on active execution; History focuses on review, proof, copying outputs, and explorer links.
+
 ### Revenue
 
 The Revenue page shows the protocol fee primitive. SomniacOS charges **0.1 STT per workflow transaction**, routed through the onchain fee vault. This creates a clear monetization model while keeping fee accounting transparent.

@@ -5,6 +5,7 @@ import { WalletButton } from "./wallet-button";
 const navItems = [
   ["Agents", "/app/agents"],
   ["Workbench", "/app/agent-workbench"],
+  ["History", "/app/history"],
   ["Revenue", "/app/revenue"]
 ] as const;
 

@@ -23,7 +23,8 @@
     "AutonomyPolicyRegistry": "0x36f5e0b1d305255eeca1b39583239fdac59c3318",
     "MemoryLedger": "0x051c953d7a28a0f6d1738f238ad4bea3454312a8",
     "ProcessManager": "0xa345c95ce5d3b5b2e12d6cee31b1289865b7456a",
-    "SomniacAgentRouterV2": "0xe426357cc73f67efa9bc5741b4875a6a52a55c99"
+    "SomniacAgentRouterV2": "0xe426357cc73f67efa9bc5741b4875a6a52a55c99",
+    "SomniacTokenFactory": "0x3b9d345511d7ea0f84b46058b389d9d0c9fe04a0"
   },
   "transactions": {
     "AgentRegistry": "0xb522cb7dba31a9dbf4b827efd48d873789961de8b7866d0f741d9fdb98f61394",
@@ -54,7 +55,8 @@
     "Capability:treasury.plan": "0x3129a226bc50da842ad197b85abc9f7178d13f5fa576345240c64131ad566f03",
     "Capability:governance.draft": "0x663e267bdfd34fd9304bf1719802d6cab85c9245dab537d2a523b3a958128289",
     "Capability:security.monitor": "0x2b8293a3e6c6828818d8e33f9ae5c2f23adf4047d12e3531f74e1ca5127f575b",
-    "AutonomyPolicyRegistrySetWorkflowCreator": "0x178777ba1c623d416168d95d49ff0e14475967c767d8357a296d479fe15e9489"
+    "AutonomyPolicyRegistrySetWorkflowCreator": "0x178777ba1c623d416168d95d49ff0e14475967c767d8357a296d479fe15e9489",
+    "SomniacTokenFactory": "0x2e7ac9f5269b218afcd78417eb3d93975e13cf2a67f94200f21094c9c6df1b96"
   },
   "protocolFee": {
     "amountSTT": "0.1",

@@ -162,6 +162,7 @@ Frontend (Next.js App Router, under `apps/web/app`):
 | `/app` → `/app/agent-workbench` | Permanent redirect | |
 | `/app/agent-workbench` | Mission-driven specialist agent runner | One signed transaction per run |
 | `/app/agents` | Curated agent catalog | From `lib/agent-engine.ts` |
+| `/app/history` | Agent output and proof archive | Local run history, receipts, token launches |
 | `/app/revenue` | Protocol fee dashboard | Direct `ProtocolFeeVault` read |
 
 Every other historical route under `/app/*` returns a `redirect()` to `/app/agent-workbench`. They remain in the tree so old URLs do not 404. See `docs/pages.md` for the full route map.
@@ -171,6 +172,7 @@ JSON APIs (`apps/web/app/api/*`):
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/agents/run` | POST | Executes a curated agent. Accepts `{ agentId, task, constraints, urls[], missionId, outputFormat, memory, requestId, txHash }`. Returns the result plus `nextActions`, `handoffs`, `memoryUpdates`, and a `source` provenance label. |
+| `/api/agents/catalog` | GET | Machine-readable list of agents, missions, output formats, and invocation fields. |
 | `/api/onchain/activity` | GET | Returns up to N decoded contract events from Somnia Shannon plus the latest block number. |
 | `/api/onchain/receipt?hash=0x…` | GET | Direct `eth_getTransactionReceipt` proxy. |
 | `/api/os/processes` | GET | OS process index. Prefers a direct `ProcessManager` read, falls back to event reconstruction. |
@@ -213,6 +215,14 @@ All contracts are deployed on **Somnia Shannon Testnet** by `0xEd9EDd8586b20524C
 | MemoryLedger | `0x051c953d7a28a0f6d1738f238ad4bea3454312a8` |
 | ProcessManager | `0xa345c95ce5d3b5b2e12d6cee31b1289865b7456a` |
 | SomniacAgentRouterV2 | `0xe426357cc73f67efa9bc5741b4875a6a52a55c99` |
+
+### Extensions
+
+| Contract | Address |
+|----------|---------|
+| SomniacTokenFactory | `0x3b9d345511d7ea0f84b46058b389d9d0c9fe04a0` |
+
+Verified factory token: `SomniacOS Demo Token (SOT)` at `0x502b0eb35f0d1bee87ba1d226602e94bf6ed9072`, deployed in tx `0xa25e0baef365eb120d2f4301396fb7a9f67146902079a693e8d01739d7d08701`.
 
 ### Somnia Agents platform (external)
 

@@ -36,6 +36,14 @@ This document is the authoritative API reference for every public function, even
 | ProcessManager | `0xa345c95ce5d3b5b2e12d6cee31b1289865b7456a` |
 | SomniacAgentRouterV2 | `0xe426357cc73f67efa9bc5741b4875a6a52a55c99` |
 
+### Extension contracts
+
+| Contract | Address |
+| --- | --- |
+| SomniacTokenFactory | `0x3b9d345511d7ea0f84b46058b389d9d0c9fe04a0` |
+
+`SomniacTokenFactory` deploys fixed-supply ERC20-compatible testnet tokens from the connected user wallet. It never receives or stores user private keys. The frontend calls `createToken(name, symbol, decimals, initialSupply, owner, metadataURI)`, the wallet signs the transaction, and the dApp decodes `TokenCreated(token, owner, deployer, name, symbol, decimals, initialSupply, metadataURI)` from the receipt. The verified sample token is `SomniacOS Demo Token (SOT)` at `0x502b0eb35f0d1bee87ba1d226602e94bf6ed9072`.
+
 Deployer: `0xEd9EDd8586b20524CafA4F568413C504C9B03172`. Protocol fee recipient: `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
 
 ---

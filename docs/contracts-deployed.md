@@ -38,6 +38,18 @@ Protocol fee recipient: `0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`
 | ProcessManager | `0xa345c95ce5d3b5b2e12d6cee31b1289865b7456a` |
 | SomniacAgentRouterV2 | `0xe426357cc73f67efa9bc5741b4875a6a52a55c99` |
 
+## Extensions
+
+| Contract | Address |
+| --- | --- |
+| SomniacTokenFactory | `0x3b9d345511d7ea0f84b46058b389d9d0c9fe04a0` |
+
+Verified token factory output:
+
+| Token | Address | Transaction |
+| --- | --- | --- |
+| SomniacOS Demo Token (`SOT`) | `0x502b0eb35f0d1bee87ba1d226602e94bf6ed9072` | `0xa25e0baef365eb120d2f4301396fb7a9f67146902079a693e8d01739d7d08701` |
+
 ## Somnia Agents platform (external)
 
 | Reference | Value |

@@ -31,6 +31,7 @@ type RunRequest = {
   requestId?: string;     // Somnia Agents requestId (optional, for telemetry)
   txHash?: string;        // Somnia transaction hash (optional, for telemetry)
   missionId?: string;     // Workbench mission preset id (optional)
+  previousResult?: string;// prior agent output for executable handoffs, max 5000 chars
   outputFormat?:          // controls the system prompt's format instruction
     | "auto" | "x-post" | "thread" | "brief"
     | "audit" | "checklist" | "email" | "plan";
@@ -48,13 +49,14 @@ type RunRequest = {
 
 1. Validates `agentId` against `curatedAgents` in `apps/web/lib/agent-engine.ts`. Unknown ids return `{ error: "Choose a valid SomniacOS agent." }` with status `400`.
 2. Validates `task` (length 1–2800) and `constraints` (≤ 1600).
-3. Fetches up to three referenced URLs (`fetchReferences`) with a 10-second per-URL timeout. HTML responses are stripped to plain text and clipped at 5000 characters.
-4. Builds a system + user prompt. System prompt always includes the agent's `name`, `role`, `category`, and skill list, plus the per-format instruction (see table below).
-5. Selects a provider:
+3. Validates `previousResult` (≤ 5000) when supplied by an executable handoff or multi-agent mission.
+4. Fetches up to three referenced URLs (`fetchReferences`) with a 10-second per-URL timeout. HTML responses are stripped to plain text and clipped at 5000 characters.
+5. Builds a system + user prompt. System prompt always includes the agent's `name`, `role`, `category`, and skill list, plus the per-format instruction (see table below).
+6. Selects a provider:
    - If `OPENAI_API_KEY` is set: POSTs to `https://api.openai.com/v1/responses` with `model = OPENAI_MODEL ?? "gpt-4o-mini"`, `temperature = 0.55`, `max_output_tokens = 1200`. Provenance: `source: "LLM API"`, `provider: "openai"`.
    - Otherwise: GET `https://text.pollinations.ai/<encoded prompt>` with a 30-second timeout. Provenance: `source: "LLM API"`, `provider: "pollinations"`.
    - On provider failure: deterministic local responder `buildLocalAgentOutput`. Provenance: `source: "SomniacOS Local"`, `provider: "local-resilient-agent"`, plus `providerError`.
-6. Computes `nextActions` and `handoffs` from the curated handoff graph (`agent-engine.ts → buildNextActions / buildAgentHandoffs`).
+7. Computes `nextActions` and `handoffs` from the curated handoff graph (`agent-engine.ts → buildNextActions / buildAgentHandoffs`).
 
 ### Response
 
@@ -93,8 +95,36 @@ type RunResponse = {
 | 400 | `Enter a task for the agent.` | Empty `task`. |
 | 400 | `Task is too long. Keep it under 2,800 characters.` | `task.length > 2800` |
 | 400 | `Constraints are too long. Keep them under 1,600 characters.` | `constraints.length > 1600` |
+| 400 | `Previous result is too long. Keep it under 5,000 characters.` | `previousResult.length > 5000` |
 | 502 | `The LLM provider returned an empty result.` | OpenAI returned an empty `output_text`. |
 | 500 | provider error message | Any other failure surfaces from `Response.json({ error })`. |
+
+---
+
+## `GET /api/agents/catalog`
+
+Returns the machine-readable SomniacOS agent surface for external agents and builders.
+
+### Response
+
+```ts
+{
+  agents: CuratedAgent[];
+  missions: AgentMission[];
+  outputFormats: { id: OutputFormat; label: string; description: string }[];
+  invocation: {
+    endpoint: "/api/agents/run";
+    method: "POST";
+    required: ["agentId", "task"];
+    optional: [
+      "constraints", "urls", "missionId", "outputFormat",
+      "memory", "requestId", "txHash", "previousResult"
+    ];
+  };
+}
+```
+
+Use this endpoint when an external agent needs to discover which SomniacOS specialists, missions, and output formats are available before invoking `/api/agents/run`.
 
 ---
 
