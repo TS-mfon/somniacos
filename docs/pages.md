@@ -23,7 +23,6 @@ Historical routes that were removed during the OS-section consolidation are kept
 | `/app/receipts` | `apps/web/app/app/receipts/page.tsx` | Mission and proof receipt archive |
 | `/app/history` | `apps/web/app/app/history/page.tsx` | Completed outputs, token launches, confidence, proof JSON |
 | `/app/docs` | `apps/web/app/app/docs/page.tsx` | In-app user, judge, developer, and troubleshooting docs |
-| `/app/revenue` | `apps/web/app/app/revenue/page.tsx` | Protocol fee dashboard reading `ProtocolFeeVault` directly |
 
 The Workbench is the regular task surface. It:
 
@@ -76,7 +75,6 @@ All of the following return `redirect("/app/agent-workbench")`. They were once d
 | `/app/os/capabilities` | Capability directory |
 | `/app/os/company` | Autonomous company scenario launcher |
 | `/app/os/processes/[id]` | Judge-facing process console |
-| `/app/os/revenue` | Earlier OS revenue page (replaced by `/app/revenue`) |
 | `/app/partnerships` | Partnership registry |
 | `/app/payments` | Payments ledger |
 | `/app/reputation` | Reputation network |
@@ -102,6 +100,5 @@ Removing these stubs is a breaking change — leave them in place unless deliber
 The landing page exports `<LiveMetrics />` from `apps/web/components/live-economy.tsx`. It reads:
 
 - `/api/onchain/activity` for event counts and the latest block.
-- `/api/os/revenue` for `totalCollected` and `feeRecipient`.
 
 These reads are the only client-side calls from the landing page; they ensure the proof card never displays fake counters.

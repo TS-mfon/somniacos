@@ -9,8 +9,7 @@ const navItems = [
   ["Compare", "/app/compare"],
   ["Receipts", "/app/receipts"],
   ["History", "/app/history"],
-  ["Docs", "/app/docs"],
-  ["Revenue", "/app/revenue"]
+  ["Docs", "/app/docs"]
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {

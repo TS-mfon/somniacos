@@ -1,122 +1,240 @@
-# SomniacOS Presentation Draft
+# SomniacOS Weekly Product Update Presentation
 
-This document is written as a PowerPoint-ready presentation script. It is approximately 1000 words and divided into slide sections.
+This deck is written as a PowerPoint-ready script for pitching this week's SomniacOS progress to the team. It focuses on what changed, why it matters, how the current product works, and what is now ready for judges and users.
 
 ## Slide 1: Title
 
-**SomniacOS: The Autonomous Economy Layer**
+**SomniacOS: From Agent Workbench To Agentic Economy OS**
 
-SomniacOS is an agentic operating system on Somnia. It lets users launch specialist AI agents through wallet-signed workflows, receive useful results, pay transparent protocol fees, and build toward a persistent onchain economy where agents can work, remember, coordinate, and transact.
+This week we moved SomniacOS from a broad agent demo into a cleaner, more usable, more judge-ready dApp. The core idea remains the same: SomniacOS is an autonomous economy layer on Somnia where users do not just chat with AI; they run specialist agents, launch structured missions, sign wallet-backed actions, receive outputs, and inspect proof.
 
-The core idea is simple: users should not just chat with AI. They should be able to deploy autonomous economic work.
+The major product shift this week was separation of concerns. Workbench is now for regular one-agent tasks. Missions is now for structured workflows like Launch Token. Compare is now for running the same prompt against multiple agents before choosing the best result. Receipts now package proof metadata. Docs are now organized into proper subpages.
 
-## Slide 2: The Problem
+## Slide 2: What We Fixed Strategically
 
-Most AI products are still wrappers around a model. They can write text or answer questions, but they do not behave like economic actors. They do not own process state, pay fees, create proof, route work to other agents, or maintain a visible economic trail.
+The earlier product had too much mixed into one surface. Token launch, regular content tasks, mission workflows, result history, and proof concepts were all competing for attention. That made the app feel less clear than the concept deserved.
 
-Most web3 applications also remain highly manual. Users have to discover services, write tasks, inspect risk, manage treasury, create content, coordinate teams, and track outcomes themselves. This limits the usefulness of onchain systems for real autonomous work.
+This week we cleaned the mental model:
 
-Somnia is built around an agentic L1 narrative. That means the strongest project should not be a normal dashboard with AI added. It should be agent-first at the system level.
+- **Workbench** is for one useful agent task.
+- **Missions** is for multi-step workflows and wallet actions.
+- **Launch Token** is mission-only because it involves validation, signing, deployment, and token artifacts.
+- **Compare** is for evaluating multiple agent outputs side-by-side.
+- **Receipts** is for proof metadata and mission artifacts.
+- **Docs** is for onboarding users, judges, and developers.
 
-## Slide 3: The Solution
+This makes the dApp easier to explain in one minute and easier to use without prior web3 knowledge.
 
-SomniacOS turns agent work into an onchain operating-system workflow.
+## Slide 3: Workbench Upgrade
 
-A user connects a wallet, selects a specialist agent, describes the task, optionally adds memory or web references, chooses the output format, and clicks **Run agent**. The user signs one Somnia transaction. That transaction funds the Somnia Agents workflow and pays the SomniacOS protocol fee. The result appears directly in the Workbench with provenance, transaction proof, handoffs, and next actions.
+Workbench is now intentionally simple. A user selects a specialist agent, enters a task, adds constraints, optionally adds URLs, chooses a result format, and runs the agent. The page no longer shows mission controls or token launch fields.
 
-This changes the product from "AI chatbot" to "autonomous economic workflow."
+This matters because users coming for a normal task should not see deployment UI. If someone wants a content post, code audit, wallet safety checklist, research brief, productivity plan, or email draft, they should not have to understand mission architecture.
 
-## Slide 4: Product Surfaces
+The Workbench now supports saved context, confidence scoring, visible results, next actions, handoffs, source labels, and stronger error recovery. It remains the fastest path for a visitor to get value from SomniacOS.
 
-SomniacOS currently focuses on three high-signal surfaces.
+## Slide 4: Missions Upgrade
 
-The **Landing Page** explains the product quickly and routes users into action.
+Missions is now the structured workflow surface. It uses mission templates and shows mission-specific UI based on the selected mission.
 
-The **Agents Page** shows functional specialist agents for marketing strategy, content writing, research, code auditing, security review, treasury planning, governance drafting, negotiation, token research, wallet safety, DeFi comparison, transaction explanation, productivity, career, travel, study, and more.
+For example, if the user selects **Launch Token**, the page shows token name, symbol, decimals, initial supply, owner, and metadata URI. If the user selects a research or audit mission, the token deployment form disappears and the user sees normal task and constraint controls.
 
-The **Workbench** is the main execution shell. Users run agents, sign transactions, view outputs, copy results, inspect source labels, and continue through agent handoffs.
+This is a major usability improvement because it proves that the dApp is not a static mockup. The UI changes based on mission intent, the agent chain is visible, and each mission has a clear execution model.
 
-The **Revenue Page** shows the protocol monetization layer: 0.1 STT per workflow transaction.
+## Slide 5: Launch Token Is Now Correctly Treated As A Mission
 
-## Slide 5: Why It Is Agent-First
+Launch Token is not a regular Workbench action. It is a mission because it includes multiple stages:
 
-SomniacOS is not organized around forms or static pages. It is organized around agents, missions, capabilities, memory, policies, processes, and callbacks.
+- The Token Launch Agent validates launch parameters.
+- The Token Research Agent can review tokenomics and risks.
+- The connected wallet signs the TokenFactory deployment.
+- The app extracts the `TokenCreated` event after receipt confirmation.
+- The result becomes a token artifact with address, owner, supply, deployer, metadata URI, and transaction hash.
 
-Each curated agent has a role, skill list, default task, default constraints, category, and onchain capability mapping. The Workbench can route users through missions such as launching a crypto project, auditing code, researching a token, checking wallet risk, or planning a day.
+The user never shares a private key. The agent prepares and explains; the user signs from their wallet. This is exactly the kind of user-safe, non-custodial agent workflow we want to demonstrate on Somnia.
 
-After producing a result, the system generates next actions and handoffs. For example, a marketing agent can hand work to a content writer, a token researcher can hand work to a wallet risk scanner, and a code auditor can hand work to a security auditor.
+## Slide 6: Agent Chain Preview
 
-This is the beginning of agent-to-agent coordination.
+Missions now includes an **Agent Chain Preview**. Before execution, the user can see which agents are involved, what each step does, whether a step uses previous output, and whether a step requires wallet signing.
 
-## Slide 6: Onchain Operating System Model
+For Launch Token, the chain shows planning, tokenomics review, wallet deployment, and launch copy. This makes the dApp feel agentic before the user signs anything. It also helps judges understand that SomniacOS is built around agent workflows, not just isolated prompts.
 
-The technical model is based on operating-system primitives.
+This preview is important because it communicates autonomy and coordination in a way a normal dashboard cannot.
 
-The user is the process owner. The agent is the worker. The capability is the executable permission. The policy defines boundaries like max spend and allowed capabilities. The process tracks the work. The step tracks each agent action. The memory ledger stores useful context. The fee vault collects protocol revenue. The router is the syscall interface between the dApp, Somnia contracts, and Somnia Agents.
+## Slide 7: Security Sentinel Fix
 
-This model is implemented through the Agentic OS Kernel contracts:
+We fixed the oversized Security Sentinel card. Previously, on smaller screens the user had to zoom out to see the `Open wallet` button. That was a critical UX problem because wallet signing is central to the dApp.
 
-- `ProtocolFeeVault`
-- `CapabilityRegistry`
-- `AutonomyPolicyRegistry`
-- `MemoryLedger`
-- `ProcessManager`
-- `SomniacAgentRouterV2`
+The modal now has a constrained height, scrollable review rows, tighter spacing, and a sticky action area. The `Open wallet` and `Cancel` buttons remain visible without zooming.
 
-## Slide 7: One-Transaction Workflow
+This improves both usability and safety. Users can review the action and still reach the wallet button easily.
 
-The most important user flow is one transaction.
+## Slide 8: Compare Upgrade
 
-When the user clicks **Run agent**, the frontend validates the task, connects the wallet, switches to Somnia Shannon if needed, reads the total fee due, estimates gas, and sends one workflow transaction.
+Compare is now a clearer multi-agent evaluation tool. The intended behavior is:
 
-That transaction creates the process, applies the policy, charges the 0.1 STT protocol fee, deposits the Somnia Agents fee, creates the external agent request, and emits onchain events. When the Somnia Agents platform callbacks the router, the process step is completed and the output becomes inspectable.
+1. The user enters one task.
+2. The user selects two or three agents.
+3. The app immediately shows running cards for each selected agent.
+4. The app runs the task against the selected agents through the real `/api/agents/run` API.
+5. The page displays each output side-by-side.
+6. The user compares the results and decides which one is strongest.
 
-The result is not just text. It is work connected to wallet, process, fee, and proof.
+We also added a comparison summary that ranks the strongest result using confidence score. Compare is honest about its role: it is API-backed evaluation, not a wallet-signed proof flow. If the user wants proof, they can rerun the chosen task through Workbench.
 
-## Slide 8: AI Execution and Reliability
+## Slide 9: Receipts And Proof Packaging
 
-The dApp uses `/api/agents/run` as the AI execution path. The route builds an agent-specific prompt using the selected agent, task, constraints, mission, memory, output format, transaction hash, and optional fetched URLs.
+Receipts now give SomniacOS a better proof story. A receipt packages key metadata around a mission or agent run:
 
-If an OpenAI key is configured, the route uses OpenAI. If not, it uses a public LLM fallback. If the external provider times out, SomniacOS still returns a deterministic local agent output. This prevents the demo from failing into a blank screen.
+- Receipt ID.
+- Mission ID and label.
+- User wallet.
+- Chain ID.
+- Agent chain.
+- Step outputs.
+- Transaction hashes.
+- Token address when applicable.
+- Result hash.
+- Timestamp.
 
-Every output has a source label:
+Receipts do not replace onchain proof. They organize it. This makes it easier for users and judges to inspect what happened after a mission or token launch.
 
-- `Somnia` for callback results.
-- `LLM API` for model-generated results.
-- `SomniacOS Local` for deterministic fallback results.
+## Slide 10: Confidence Scoring
 
-This keeps the product honest and usable.
+We added agent confidence scoring. This is not a claim that the output is guaranteed true. It is a usability signal based on how complete and useful the result appears.
 
-## Slide 9: Monetization
+The score considers task specificity, constraints, output detail, source mode, format alignment, task-agent match, and fallback language. Users see a label like Low, Medium, or High, plus a percentage.
 
-SomniacOS has a clear revenue primitive: **0.1 STT per workflow transaction**.
+This helps users compare outputs and understand when a result needs more refinement.
 
-The fee is charged in the same transaction as the Somnia Agents request. This avoids extra wallet friction and makes the product feel like one coherent workflow. Fees are routed through the protocol fee vault and can be surfaced in the Revenue page.
+## Slide 11: Saved User Context
 
-This matters because the dApp is not just a hackathon UI. It has an economic model that can scale with agent usage.
+Saved context was expanded so agents can reuse more user preference data. Users can now store project name, audience, industry, tone, risk tolerance, wallet experience, common links, preferences, and do-not-do rules.
 
-## Slide 10: Judging Criteria Alignment
+This is important because a real agentic operating system should not treat every task as isolated. Agents need persistent user context to produce useful work over time.
 
-For **Functionality**, SomniacOS is deployed, wallet-connectable, and usable. Visitors can run agents, sign transactions, receive visible results, and inspect outputs.
+The saved context feeds Workbench, Missions, and Compare.
 
-For **Agent-First Design**, agents are the center of the app. The experience is built around specialist agents, missions, capabilities, memory, handoffs, and process execution.
+## Slide 12: Public Agent Profiles
 
-For **Innovation and Technical Creativity**, SomniacOS models agent work as an operating system with policies, processes, capabilities, steps, memory, callbacks, and protocol fees.
+Agent profile pages are now real pages instead of redirects. Each profile shows:
 
-For **Autonomous Performance**, the system has resilient execution, fallbacks, result persistence, next actions, and a roadmap toward always-on runtime workers and event indexers.
+- Agent name and role.
+- Skills.
+- Example tasks.
+- Category.
+- Task type.
+- Onchain capability mapping.
+- Compatible missions.
+- Correct action path.
 
-## Slide 11: Future Expansion
+Normal agents route to Workbench. Token Launcher routes to the Launch Token mission. This gives each agent a more concrete identity inside the system.
 
-The current Workbench is the first primitive. The next step is persistent autonomous behavior.
+## Slide 13: Docs Upgrade
 
-Agents should eventually discover other agents, negotiate prices, buy services, subcontract work, create subscriptions, form organizations, split revenue, and evolve reputation. Organizations can contain CEO agents, treasury agents, marketing agents, security agents, and analytics agents. These agents can compete, partner, merge, outsource, and adapt.
+Docs were upgraded from a single short page into a sectioned documentation system with subpages.
 
-The long-term vision is autonomous AI capitalism onchain: a living machine economy on Somnia.
+The new docs cover:
 
-## Slide 12: Closing
+- Overview.
+- Workbench.
+- Missions.
+- Launch Token.
+- Compare.
+- Receipts.
+- Agent Profiles.
+- Security and Error Recovery.
+- Developer Reference.
 
-SomniacOS demonstrates a new category of dApp: not a chatbot, not a static marketplace, and not a fake simulation.
+This makes the dApp easier for judges, users, and teammates to understand. It also removes internal accounting distractions from the visible UI and docs so the product stays focused on user value and agent functionality.
 
-It is an autonomous economy layer where agent work is tied to transactions, fees, memory, proof, and follow-up execution. The current product is usable today through specialist agents and the Workbench. The architecture points toward a bigger future where agents become persistent economic entities on Somnia.
+## Slide 14: Navigation Cleanup
 
-SomniacOS is built to show what an Agentic L1 can make possible.
+We removed internal accounting pages from the visible app navigation and from user-facing docs. The product now presents only surfaces a visitor can immediately understand and use.
+
+The visible navigation is now:
+
+- Agents.
+- Workbench.
+- Missions.
+- Compare.
+- Receipts.
+- History.
+- Docs.
+
+This is a much stronger product story. A user sees what they can actually do, not internal accounting details.
+
+## Slide 15: Error Recovery Improvements
+
+We improved user-facing error recovery. Instead of showing only raw technical errors, the app now gives practical next actions:
+
+- Install or unlock wallet.
+- Approve Somnia Shannon network switch.
+- Fund STT for fees and gas.
+- Retry after gas estimation problems.
+- Fix invalid URLs.
+- Wait for pending callbacks.
+- Correct token fields.
+
+This matters because a judge or visitor should be able to recover without knowing RPC internals.
+
+## Slide 16: Technical Architecture This Week
+
+This week's implementation touched the core product architecture:
+
+- `agent-engine.ts` now includes richer types for confidence, receipts, compare sessions, regular Workbench agents, docs-compatible mission flows, and helper selectors.
+- `history-store.ts` now persists proof receipts, mission receipts, and compare sessions.
+- `agent-workbench.tsx` now supports Workbench and Missions modes.
+- New pages were added for Missions, Compare, Receipts, Docs, and Agent Profiles.
+- Docs content was moved into a structured module so the docs index and docs subpages share the same source.
+
+The build remains production-ready and deployable on Vercel.
+
+## Slide 17: Why This Improves The Hackathon Submission
+
+This week's changes strengthen every judging category.
+
+For **Functionality**, the app has cleaner routes, visible task execution, mission-specific UI, token launch flow, compare output, receipts, docs, and better error recovery.
+
+For **Agent-First Design**, the app now centers around agent profiles, mission templates, agent chain previews, saved context, handoffs, and multi-agent comparison.
+
+For **Innovation**, SomniacOS now feels more like an agentic operating system: tasks, missions, receipts, confidence, profiles, and proof surfaces work together.
+
+For **Autonomous Performance**, the app is more resilient because outputs are visible, pending states are clearer, errors are recoverable, and results are stored.
+
+## Slide 18: Current Demo Flow For The Team
+
+The recommended team demo flow is:
+
+1. Open the landing page and explain SomniacOS as the Autonomous Economy Layer.
+2. Go to Agents and show public specialist profiles.
+3. Open Workbench and run a simple content or research task.
+4. Open Compare, select two agents, run one task, and show side-by-side outputs.
+5. Open Missions and select Launch Token.
+6. Show the token-specific UI and agent chain preview.
+7. Open Receipts and explain proof packaging.
+8. Open Docs and show the sectioned guide.
+
+This flow shows utility, agent-first design, mission architecture, and judge readiness.
+
+## Slide 19: What Is Still Next
+
+The next improvements should focus on deeper autonomous execution:
+
+- Multi-step mission execution where each chain step runs automatically.
+- Shareable public receipt links.
+- Better browser-based visual comparison scoring.
+- More mission templates for crypto and everyday tasks.
+- More onchain event anchoring for mission receipts.
+- Optional persistent backend storage beyond local browser storage.
+- Better indexing of Somnia callback events.
+
+These are extensions. The current product is already clearer, stronger, and easier to pitch than it was at the start of the week.
+
+## Slide 20: Closing
+
+SomniacOS is now positioned as more than an agent marketplace or AI wrapper. It is becoming an agentic economic operating system on Somnia.
+
+This week we made the product cleaner, more functional, more understandable, and more defensible for judging. Workbench handles regular tasks. Missions handles structured workflows. Launch Token is correctly mission-only. Compare shows multiple agent outputs. Receipts preserve proof. Docs explain the system. Agent profiles make the agents feel real.
+
+The pitch is now simple: SomniacOS lets users run autonomous agent work on Somnia with useful outputs, wallet-aware actions, structured missions, and proof-ready receipts.
