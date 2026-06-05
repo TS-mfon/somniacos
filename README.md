@@ -160,12 +160,91 @@ Frontend (Next.js App Router, under `apps/web/app`):
 |------|---------|-------|
 | `/` | Landing page | Live proof card reads metrics from contracts |
 | `/app` → `/app/agent-workbench` | Permanent redirect | |
-| `/app/agent-workbench` | Mission-driven specialist agent runner | One signed transaction per run |
-| `/app/agents` | Curated agent catalog | From `lib/agent-engine.ts` |
-| `/app/history` | Agent output and proof archive | Local run history, receipts, token launches |
+| `/app/agent-workbench` | Regular specialist agent runner | One signed transaction for ordinary tasks |
+| `/app/missions` | Mission templates and agent-to-agent workflows | Launch Token, project launch, audits, research, wallet safety |
+| `/app/agents` | Curated agent catalog | From `lib/agent-engine.ts`; token launcher routes to Missions |
+| `/app/agents/[id]` | Public agent profile | Skills, examples, compatible missions, routing |
+| `/app/compare` | Multi-agent result comparison | Real agent API comparison before proof-backed run |
+| `/app/receipts` | Mission and proof receipt archive | Mission chain, tx hashes, result hashes, token artifacts |
+| `/app/history` | Agent output and proof archive | Local run history, receipts, token launches, confidence |
+| `/app/docs` | In-app documentation | User, judge, developer, and troubleshooting docs |
 | `/app/revenue` | Protocol fee dashboard | Direct `ProtocolFeeVault` read |
 
 Every other historical route under `/app/*` returns a `redirect()` to `/app/agent-workbench`. They remain in the tree so old URLs do not 404. See `docs/pages.md` for the full route map.
+
+## Product Surfaces
+
+### Workbench
+
+Workbench is intentionally narrow: one regular specialist agent, one task, one wallet-signed Somnia transaction, one visible result. It is designed for users who want immediate utility without understanding the rest of the autonomous economy system.
+
+Supported regular agents include content writing, marketing strategy, research, code audit, security audit, treasury planning, governance drafting, negotiation, wallet risk scanning, DeFi review, transaction explanation, email writing, travel planning, tutoring, career coaching, meeting summarization, and productivity planning. The `token-launcher` is deliberately excluded from the Workbench dropdown because token launch is a mission, not a generic task.
+
+### Missions
+
+Missions are structured workflows. Each mission has a template, primary agent, mission-specific inputs, optional multi-agent steps, output format, and a visible chain preview before execution. The page only renders the UI required for the selected mission, keeping the product clean.
+
+Initial mission templates:
+
+| Mission | Purpose | Key behavior |
+|---------|---------|--------------|
+| Launch Token | Non-custodial Somnia testnet token creation | Shows token form, validates params, opens wallet, extracts `TokenCreated` |
+| Launch my crypto project | Strategy, research, content | Chains strategist, researcher, content writer |
+| Research a token or protocol | Utility, risks, catalysts, unknowns | Uses research agent and optional URLs |
+| Audit my code or contract | Security-minded review | Uses code auditor output format and severity framing |
+| Plan my day | Practical normal-life planning | Uses productivity agent |
+| Check wallet or dApp risk | Plain-English wallet safety | Uses wallet risk scanner |
+
+### Launch Token Mission
+
+`Launch Token` is mission-only. It appears at `/app/missions?mission=launch-token` and renders token-specific fields after the user selects it:
+
+- Token name.
+- Symbol.
+- Decimals.
+- Initial supply.
+- Optional owner address.
+- Metadata URI.
+
+The agent validates and explains the launch parameters. The Security Sentinel then displays the signer, factory, token name, symbol, supply, owner, and an explicit private-key safety statement. The user signs the deployment from their own wallet; the dApp never asks for or handles private keys. After the Somnia receipt confirms, the frontend extracts the `TokenCreated` event and saves a mission artifact containing token address, owner, deployer, supply, metadata URI, and transaction hash.
+
+### Agent Chain Preview
+
+Missions display the planned chain before execution. Each step shows the step number, agent role, task, whether it uses previous output, and whether it needs a wallet action. This is the user-facing proof that the system is mission-native, not just a static button around an LLM call.
+
+### Receipts
+
+Receipts are generated locally from completed runs and token launches. They are not a replacement for onchain proof; they are a structured envelope that references onchain proof through transaction hashes and result hashes.
+
+Receipt fields include:
+
+- Receipt ID.
+- Mission ID and label.
+- User wallet.
+- Chain ID `50312`.
+- Agent chain.
+- Step outputs.
+- Transaction hashes.
+- Token address when applicable.
+- Result hash.
+- Fee paid when available.
+- Timestamp.
+
+### Result Compare
+
+Compare runs the same task through two or three specialist agents using the real `/api/agents/run` route. It is intentionally labeled as an API-backed comparison lab, not an onchain proof surface. Users can inspect which answer is better, then run the selected task through Workbench or Missions when they need wallet-backed proof.
+
+### Agent Confidence Score
+
+Every new result can carry an output-confidence score. The score is not a truth guarantee. It is a usability signal based on task specificity, constraints, output detail, source mode, format alignment, agent/task fit, and fallback language. Scores render in live results, History, and Compare.
+
+### Saved User Context
+
+Users can save reusable context for all agent runs: project, audience, industry, tone, risk tolerance, wallet experience, common links, preferences, and do-not-do rules. The agent API receives this memory as part of the prompt, so repeated tasks can stay consistent without requiring users to retype context.
+
+### Error Recovery
+
+User-facing errors are translated into direct next actions: install or unlock wallet, approve Somnia network switch, fund STT, retry after gas estimation problems, fix URLs, wait for callbacks, or correct token parameters. Technical errors are still preserved in status panels and receipts where useful.
 
 JSON APIs (`apps/web/app/api/*`):
 

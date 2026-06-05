@@ -16,13 +16,16 @@ import {
   matchOnchainAgent,
   outputFormats,
   readableAgentLabel,
+  regularWorkbenchAgents,
+  scoreAgentRun,
   type AgentMemory,
+  type AgentMission,
   type AgentNextAction,
   type AgentRunRecord,
   type CuratedAgent,
   type OutputFormat
 } from "../lib/agent-engine";
-import { loadRunHistory, upsertRunHistory } from "../lib/history-store";
+import { loadRunHistory, upsertMissionReceipt, upsertRunHistory } from "../lib/history-store";
 import { summarizeError } from "../lib/onchain-state";
 
 const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
@@ -102,14 +105,16 @@ const statusSteps: Array<{ phase: RunPhase; label: string }> = [
   { phase: "success", label: "Result visible" }
 ];
 
-export function AgentWorkbench() {
+export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbench" | "missions" }) {
+  const missionMode = surface === "missions";
   const { data, state, reload } = useOnchainActivity(8000);
   const { wallet, connect, switchToSomnia, walletClient, refresh } = useSomniaWallet();
-  const [agentId, setAgentId] = useState(agentMissions[0].agentId);
-  const [missionId, setMissionId] = useState(agentMissions[0].id);
-  const [outputFormat, setOutputFormat] = useState<OutputFormat>(agentMissions[0].outputFormat);
-  const [goal, setGoal] = useState(agentMissions[0].task);
-  const [constraints, setConstraints] = useState(agentMissions[0].constraints);
+  const defaultAgent = missionMode ? curatedAgents.find((agent) => agent.id === agentMissions[0].agentId) ?? curatedAgents[0] : regularWorkbenchAgents[0];
+  const [agentId, setAgentId] = useState(defaultAgent.id);
+  const [missionId, setMissionId] = useState(missionMode ? agentMissions[0].id : "regular-task");
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>(missionMode ? agentMissions[0].outputFormat : inferOutputFormat(defaultAgent, "auto"));
+  const [goal, setGoal] = useState(missionMode ? agentMissions[0].task : defaultAgent.defaultTask);
+  const [constraints, setConstraints] = useState(missionMode ? agentMissions[0].constraints : defaultAgent.defaultConstraints);
   const [webUrls, setWebUrls] = useState("");
   const [memory, setMemory] = useState<AgentMemory>(defaultMemory());
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -129,18 +134,20 @@ export function AgentWorkbench() {
     metadataURI: "somniacos://token/agent-token"
   });
 
-  const selected = useMemo(() => curatedAgents.find((agent) => agent.id === agentId) ?? curatedAgents[0], [agentId]);
+  const selectableAgents = useMemo(() => missionMode ? curatedAgents : regularWorkbenchAgents, [missionMode]);
+  const selected = useMemo(() => selectableAgents.find((agent) => agent.id === agentId) ?? selectableAgents[0], [agentId, selectableAgents]);
   const selectedMission = useMemo(() => agentMissions.find((mission) => mission.id === missionId) ?? agentMissions[0], [missionId]);
+  const selectedMissionSteps = selectedMission.steps ?? [{ label: selectedMission.label, agentId: selectedMission.agentId, task: selectedMission.task, constraints: selectedMission.constraints, outputFormat: selectedMission.outputFormat, requiresAgentRun: true }];
   const matchedOnchain = useMemo(() => matchOnchainAgent(selected, state.agents), [selected, state.agents]);
   const allUrls = useMemo(() => webUrls.split(/\s+/).map((url) => url.trim()).filter(Boolean), [webUrls]);
   const urls = useMemo(() => allUrls.slice(0, 3), [allUrls]);
   const mode = urls.length ? 1 : 0;
   const routerConfigured = osKernelEnabled && osKernelConfigured && Boolean(osContracts.SomniacAgentRouterV2);
   const tokenFactoryConfigured = extensionContracts.SomniacTokenFactory !== "0x0000000000000000000000000000000000000000";
-  const isTokenMission = missionId === "launch-token" || selected.id === "token-launcher";
+  const isTokenMission = missionMode && (missionId === "launch-token" || selected.id === "token-launcher");
   const isRunning = activePhases.has(tx.phase);
 
-  const completedFromEvents = useMemo(() => {
+  const completedFromEvents = useMemo<AgentRunRecord[]>(() => {
     const requested = new Map<string, Record<string, unknown>>();
     for (const item of data.activity) {
       if (item.contract === "SomniacAgentRouterV2" && item.eventName === "OSAgentRunRequested") {
@@ -181,13 +188,19 @@ export function AgentWorkbench() {
       return true;
     });
   }, [completedFromEvents, localRuns]);
-  const latestResult = anchoredResults[0];
-  const pendingRuns = useMemo(() => localRuns.filter((item) => item.status === "Pending"), [localRuns]);
+  const visibleResults = useMemo(() => anchoredResults.filter((item) => missionMode ? item.missionId && item.missionId !== "regular-task" : !item.missionId || item.missionId === "regular-task"), [anchoredResults, missionMode]);
+  const latestResult = visibleResults[0];
+  const pendingRuns = useMemo(() => localRuns.filter((item) => item.status === "Pending" && (missionMode ? item.missionId && item.missionId !== "regular-task" : !item.missionId || item.missionId === "regular-task")), [localRuns, missionMode]);
 
   useEffect(() => {
-    const param = new URLSearchParams(window.location.search).get("agent");
+    const params = new URLSearchParams(window.location.search);
+    const missionParam = params.get("mission");
+    const param = params.get("agent");
+    if (missionMode && missionParam) {
+      applyMission(missionParam);
+    }
     if (param) {
-      const agent = curatedAgents.find((item) => item.id === param);
+      const agent = selectableAgents.find((item) => item.id === param);
       if (agent) applyAgent(agent);
     }
     setLocalRuns(loadRunHistory());
@@ -200,7 +213,7 @@ export function AgentWorkbench() {
       }
     }
     setTokenForm((current) => ({ ...current, owner: window.ethereum ? current.owner : "" }));
-  }, []);
+  }, [missionMode, selectableAgents]);
 
   useEffect(() => {
     if (!routerConfigured) {
@@ -437,6 +450,22 @@ export function AgentWorkbench() {
 
   function saveRun(item: AgentRunRecord) {
     setLocalRuns(upsertRunHistory(item));
+    if (item.missionId && item.missionId !== "regular-task" && item.status === "Success") {
+      upsertMissionReceipt({
+        receiptId: `mission:${item.missionId}:${item.requestId}`,
+        missionId: item.missionId,
+        missionLabel: agentMissions.find((mission) => mission.id === item.missionId)?.label ?? item.missionId,
+        user: item.user,
+        chainId: 50312,
+        agentChain: selectedMissionSteps.map((step) => ({ label: step.label, agentId: step.agentId, walletAction: step.requiresWalletAction })),
+        stepOutputs: [{ label: item.stepLabel ?? readableAgentLabel(item.appAgentId), agentId: item.appAgentId, result: item.result, txHash: item.txHash }],
+        txHashes: item.txHash ? [item.txHash] : [],
+        tokenAddress: item.artifact?.type === "token" ? item.artifact.tokenAddress : undefined,
+        resultHash: item.result ? `${item.result.length}:${item.result.slice(0, 24)}` : undefined,
+        feePaid: deposit ? `${formatEther(deposit)} STT` : undefined,
+        createdAt: item.completedAt || new Date().toISOString()
+      });
+    }
   }
 
   async function prepareTokenDeploy() {
@@ -497,7 +526,7 @@ export function AgentWorkbench() {
       if (receipt.status !== "success") throw new Error("Token deployment reverted.");
       const artifact = extractTokenCreated(receipt.logs);
       if (!artifact) throw new Error("Token deployed, but TokenCreated event was not found.");
-      const run: AgentRunRecord = {
+      const runBase: AgentRunRecord = {
         requestId: `token-${artifact.tokenAddress.slice(2, 10)}`,
         user: account,
         appAgentId: "token-launcher",
@@ -533,6 +562,7 @@ export function AgentWorkbench() {
           txHash: hash
         }
       };
+      const run = { ...runBase, confidence: scoreAgentRun(runBase) };
       saveRun(run);
       setActiveRun(run);
       setResultModal(run);
@@ -543,33 +573,33 @@ export function AgentWorkbench() {
     }
   }
 
-  const categories = Array.from(new Set(curatedAgents.map((agent) => agent.category)));
+  const categories = Array.from(new Set(selectableAgents.map((agent) => agent.category)));
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
       <section className="panel rounded-[1.5rem] p-5 sm:p-6">
-        <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Workbench</p>
-        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Run useful agents with one signed transaction.</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Pick a specialist, describe the task, and sign once. The transaction includes Somnia agent fees plus the 0.1 STT protocol fee, then the result appears after the onchain callback.</p>
+        <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">{missionMode ? "Missions" : "Workbench"}</p>
+        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-5xl">{missionMode ? "Run structured agent missions." : "Run useful agents with one signed transaction."}</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">{missionMode ? "Choose a mission template, preview the agent chain, then run the workflow. Launch Token reveals a dedicated deployment UI only when that mission is selected." : "Pick a specialist, describe the task, and sign once. Use Missions for token launches and multi-agent workflows."}</p>
         {data.ok === false ? (
           <div className="mt-5 rounded-2xl border border-ember/30 bg-ember/10 p-4 text-sm leading-6 text-ember">
             Onchain history is temporarily unavailable, but your local confirmed and pending agent runs are still shown below. {data.error}
           </div>
         ) : null}
         <div className="mt-6 grid gap-4">
-          <label className="block">
+          {missionMode ? <label className="block">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Mission</span>
             <select value={missionId} onChange={(event) => applyMission(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
               {agentMissions.map((mission) => <option key={mission.id} value={mission.id}>{mission.label}</option>)}
             </select>
             <span className="mt-2 block text-xs leading-5 text-white/38">{selectedMission.description}</span>
-          </label>
+          </label> : null}
           <label className="block">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Specialist</span>
-            <select value={agentId} onChange={(event) => applyAgent(curatedAgents.find((agent) => agent.id === event.target.value) ?? curatedAgents[0])} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
+            <select value={agentId} onChange={(event) => applyAgent(selectableAgents.find((agent) => agent.id === event.target.value) ?? selectableAgents[0])} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
               {categories.map((category) => (
                 <optgroup key={category} label={category}>
-                  {curatedAgents.filter((agent) => agent.category === category).map((agent) => <option key={agent.id} value={agent.id}>{agent.role} - {agent.name}</option>)}
+                  {selectableAgents.filter((agent) => agent.category === category).map((agent) => <option key={agent.id} value={agent.id}>{agent.role} - {agent.name}</option>)}
                 </optgroup>
               ))}
             </select>
@@ -612,12 +642,13 @@ export function AgentWorkbench() {
           </div>
           <button onClick={runAgent} disabled={isRunning} className="inline-flex items-center justify-center gap-2 rounded-xl bg-signal px-5 py-3 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60">
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RadioTower className="h-4 w-4" />}
-            Run agent
+            {missionMode ? "Run mission agent" : "Run agent"}
           </button>
         </div>
       </section>
 
       <aside className="space-y-4">
+        {missionMode ? <MissionChainPreview mission={selectedMission} /> : null}
         <div className="panel rounded-[1.5rem] p-5">
           <button onClick={() => setMemoryOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
             <span>
@@ -630,8 +661,14 @@ export function AgentWorkbench() {
             <div className="mt-4 grid gap-3">
               <MemoryInput label="Project" value={memory.projectName} onChange={(value) => updateMemory({ ...memory, projectName: value })} />
               <MemoryInput label="Audience" value={memory.audience} onChange={(value) => updateMemory({ ...memory, audience: value })} />
+              <MemoryInput label="Industry" value={memory.industry ?? ""} onChange={(value) => updateMemory({ ...memory, industry: value })} />
+              <MemoryInput label="Tone" value={memory.tone ?? ""} onChange={(value) => updateMemory({ ...memory, tone: value })} />
+              <MemoryInput label="Risk tolerance" value={memory.riskTolerance ?? ""} onChange={(value) => updateMemory({ ...memory, riskTolerance: value })} />
+              <MemoryInput label="Wallet level" value={memory.walletExperience ?? ""} onChange={(value) => updateMemory({ ...memory, walletExperience: value })} />
               <MemoryText label="Context" value={memory.context} onChange={(value) => updateMemory({ ...memory, context: value })} />
               <MemoryText label="Preferences" value={memory.preferences} onChange={(value) => updateMemory({ ...memory, preferences: value })} />
+              <MemoryText label="Common links" value={memory.commonLinks ?? ""} onChange={(value) => updateMemory({ ...memory, commonLinks: value })} />
+              <MemoryText label="Do not do" value={memory.doNotDo ?? ""} onChange={(value) => updateMemory({ ...memory, doNotDo: value })} />
             </div>
           ) : null}
         </div>
@@ -656,7 +693,7 @@ export function AgentWorkbench() {
       </aside>
 
       {latestResult ? <LatestResult run={latestResult} onNextAction={runNextAction} /> : null}
-      <MissionTimeline runs={localRuns} activeMissionId={missionId} />
+      {missionMode ? <MissionTimeline runs={localRuns} activeMissionId={missionId} /> : null}
       {resultModal ? <ResultModal run={resultModal} onClose={() => setResultModal(null)} /> : null}
       {sentinel ? <SecuritySentinel intent={sentinel} onClose={() => setSentinel(null)} /> : null}
     </div>
@@ -688,6 +725,30 @@ function TokenLaunchPanel({ form, configured, disabled, onChange, onDeploy }: { 
       <button onClick={onDeploy} disabled={disabled || !configured} className="mt-4 inline-flex w-full items-center justify-center rounded-xl border border-signal/30 bg-black/25 px-4 py-3 text-sm font-semibold text-signal disabled:cursor-not-allowed disabled:opacity-50">
         Deploy token with wallet
       </button>
+    </div>
+  );
+}
+
+function MissionChainPreview({ mission }: { mission: AgentMission }) {
+  const steps = mission.steps ?? [{ label: mission.label, agentId: mission.agentId, task: mission.task, constraints: mission.constraints, outputFormat: mission.outputFormat, requiresAgentRun: true }];
+  return (
+    <div className="panel rounded-[1.5rem] p-5">
+      <p className="font-mono text-xs uppercase tracking-[0.2em] text-signal">Agent chain preview</p>
+      <h3 className="mt-3 text-2xl font-semibold text-white">{mission.label}</h3>
+      <p className="mt-2 text-sm leading-6 text-white/50">{mission.description}</p>
+      <div className="mt-4 grid gap-3">
+        {steps.map((step, index) => (
+          <div key={`${step.label}-${step.agentId}`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-signal">Step {index + 1}</p>
+              {step.requiresWalletAction ? <span className="rounded-full border border-ember/30 px-2 py-1 font-mono text-[10px] text-ember">wallet</span> : <span className="rounded-full border border-white/10 px-2 py-1 font-mono text-[10px] text-white/40">agent</span>}
+            </div>
+            <p className="mt-2 font-semibold text-white">{step.label}</p>
+            <p className="mt-1 text-sm text-white/55">{readableAgentLabel(step.agentId)}</p>
+            <p className="mt-2 line-clamp-3 text-xs leading-5 text-white/40">{step.usesPreviousOutput ? "Uses previous output. " : ""}{step.task}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -772,26 +833,30 @@ function ResultStudio({ run, compact = false }: { run: AgentRunRecord; compact?:
     <div className={`${compact ? "mt-3" : "mt-4"} rounded-2xl border border-white/10 bg-black/25 p-4`}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-xs uppercase tracking-[0.2em] text-signal">{format.replace("-", " ")}</span>
-        <button onClick={() => void navigator.clipboard?.writeText(run.result)} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 font-mono text-[11px] text-white/45 hover:text-white"><Copy className="h-3 w-3" /> copy</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {run.confidence ? <span className="rounded-lg border border-signal/20 bg-signal/10 px-2 py-1 font-mono text-[11px] text-signal">{run.confidence.label} {run.confidence.score}%</span> : null}
+          <button onClick={() => void navigator.clipboard?.writeText(run.result)} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 font-mono text-[11px] text-white/45 hover:text-white"><Copy className="h-3 w-3" /> copy</button>
+        </div>
       </div>
       <p className="whitespace-pre-wrap text-sm leading-7 text-white/82">{run.result}</p>
+      {run.confidence?.reasons.length ? <p className="mt-3 text-xs leading-5 text-white/42">{run.confidence.reasons.join(" ")}</p> : null}
     </div>
   );
 }
 
 function SecuritySentinel({ intent, onClose }: { intent: SentinelIntent; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/72 p-4 backdrop-blur">
-      <section className="w-full max-w-2xl rounded-[1.5rem] border border-signal/25 bg-[#131313] p-5 shadow-[0_0_80px_rgba(0,255,194,0.14)] sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/72 p-3 backdrop-blur sm:items-center sm:p-4">
+      <section className="max-h-[92vh] w-full max-w-xl overflow-hidden rounded-[1.25rem] border border-signal/25 bg-[#131313] p-4 shadow-[0_0_80px_rgba(0,255,194,0.14)] sm:p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Security Sentinel</p>
-            <h2 className="mt-3 text-3xl font-semibold text-white">{intent.title}</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-white">{intent.title}</h2>
             <p className="mt-2 text-sm leading-6 text-white/52">Review this action before the wallet opens. SomniacOS never asks for private keys or seed phrases.</p>
           </div>
           <button onClick={onClose} className="rounded-full border border-white/10 p-2 text-white/60 hover:text-white"><X className="h-4 w-4" /></button>
         </div>
-        <div className="mt-5 grid gap-2">
+        <div className="mt-4 grid max-h-[52vh] gap-2 overflow-y-auto pr-1">
           {intent.rows.map((row) => (
             <div key={row.label} className="rounded-xl border border-white/10 bg-black/25 p-3">
               <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">{row.label}</p>
@@ -799,7 +864,7 @@ function SecuritySentinel({ intent, onClose }: { intent: SentinelIntent; onClose
             </div>
           ))}
         </div>
-        <div className="mt-5 flex flex-wrap gap-3">
+        <div className="sticky bottom-0 mt-4 flex flex-col gap-2 border-t border-white/10 bg-[#131313]/95 pt-4 sm:flex-row">
           <button onClick={intent.onConfirm} className="rounded-xl bg-signal px-5 py-3 text-sm font-semibold text-black">Open wallet</button>
           <button onClick={onClose} className="rounded-xl border border-white/10 px-5 py-3 text-sm text-white/62 hover:text-white">Cancel</button>
         </div>
@@ -925,12 +990,14 @@ function normalizeTokenForm(form: TokenLaunchForm, fallbackOwner: Address) {
 
 function recommendedAction(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  if (message.includes("rejected") || message.includes("denied")) return "Nothing was submitted. Click Run agent again and approve the wallet prompt.";
-  if (message.includes("insufficient") || message.includes("underfunded")) return "Add STT on Somnia Shannon, refresh the page, then retry.";
-  if (message.includes("gas")) return "The app estimated gas explicitly. If your wallet still refuses, reload the page and try once more.";
-  if (message.includes("chain") || message.includes("network")) return "The app will switch to Somnia automatically. If your wallet blocks it, use the wallet network selector once.";
-  if (message.includes("timeout") || message.includes("callback")) return "Keep the Workbench open or refresh later. Pending requests are recovered from local storage and chain reads.";
-  if (message.includes("url")) return "Fix the URL or remove it to use LLM mode.";
+  if (message.includes("no injected wallet") || message.includes("ethereum")) return "Install or unlock MetaMask, Rabby, Brave Wallet, or Coinbase Wallet, then connect again.";
+  if (message.includes("rejected") || message.includes("denied") || message.includes("user rejected")) return "Nothing was submitted. Click the button again and approve the wallet prompt.";
+  if (message.includes("insufficient") || message.includes("underfunded") || message.includes("funds")) return "Add STT on Somnia Shannon for the agent fee plus gas, refresh your balance, then retry.";
+  if (message.includes("gas") || message.includes("estimate")) return "Switch away from Somnia and back in your wallet, then retry. The app will re-check the network before opening the wallet.";
+  if (message.includes("chain") || message.includes("network")) return "Approve the Somnia Shannon network switch in your wallet. If blocked, switch networks manually and retry.";
+  if (message.includes("timeout") || message.includes("callback")) return "The transaction may still be valid. Check History or retry after the pending request is recovered.";
+  if (message.includes("url")) return "Use a full http(s) URL or remove the URL to run with LLM inference.";
+  if (message.includes("token")) return "Review token name, symbol, decimals, supply, and owner address, then retry.";
   return "Review the message above, then retry when corrected.";
 }
 
@@ -1080,7 +1147,7 @@ async function executeAgent({
     memoryUpdates?: string[];
   };
   if (!response.ok || !payload.result) {
-    return {
+    const failedRun: AgentRunRecord = {
       requestId,
       user: account,
       appAgentId: selected.id,
@@ -1101,8 +1168,9 @@ async function executeAgent({
       completedAt: new Date().toISOString(),
       txHash: hash
     };
+    return { ...failedRun, confidence: scoreAgentRun(failedRun) };
   }
-  return {
+  const successfulRun: AgentRunRecord = {
     requestId,
     user: account,
     appAgentId: selected.id,
@@ -1127,6 +1195,7 @@ async function executeAgent({
     completedAt: new Date().toISOString(),
     txHash: hash
   };
+  return { ...successfulRun, confidence: scoreAgentRun(successfulRun) };
 }
 
 function memorySnapshot(memory: AgentMemory) {

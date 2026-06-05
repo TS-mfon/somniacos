@@ -63,6 +63,7 @@ export type AgentRunRecord = {
   stepIndex?: number;
   stepLabel?: string;
   parentRequestId?: string;
+  confidence?: AgentConfidence;
   artifact?: AgentArtifact;
 };
 
@@ -93,9 +94,22 @@ export type AgentMissionStep = {
 export type AgentMemory = {
   projectName: string;
   audience: string;
+  industry?: string;
+  tone?: string;
+  riskTolerance?: string;
+  walletExperience?: string;
+  outputLength?: string;
+  commonLinks?: string;
+  doNotDo?: string;
   context: string;
   preferences: string;
   lastUpdated: string;
+};
+
+export type AgentConfidence = {
+  score: number;
+  label: "Low" | "Medium" | "High";
+  reasons: string[];
 };
 
 export type AgentNextAction = {
@@ -147,6 +161,31 @@ export type AgentProofReceipt = {
   tokenAddress?: string;
   feePaid?: string;
   chainId: 50312;
+  createdAt: string;
+};
+
+export type MissionReceipt = {
+  receiptId: string;
+  missionId: string;
+  missionLabel: string;
+  user: string;
+  chainId: 50312;
+  agentChain: Array<{ label: string; agentId: string; walletAction?: string }>;
+  stepOutputs: Array<{ label: string; agentId: string; result: string; txHash?: string }>;
+  txHashes: string[];
+  tokenAddress?: string;
+  resultHash?: string;
+  feePaid?: string;
+  createdAt: string;
+};
+
+export type CompareSession = {
+  id: string;
+  task: string;
+  constraints: string;
+  outputFormat: OutputFormat;
+  agentIds: string[];
+  results: AgentRunRecord[];
   createdAt: string;
 };
 
@@ -426,6 +465,8 @@ export const curatedAgents: CuratedAgent[] = [
   }
 ];
 
+export const regularWorkbenchAgents = curatedAgents.filter((agent) => agent.id !== "token-launcher");
+
 export const outputFormats: Array<{ id: OutputFormat; label: string; description: string }> = [
   { id: "auto", label: "Auto", description: "Let the agent choose the best structure." },
   { id: "x-post", label: "X post", description: "Short publishable social output." },
@@ -571,10 +612,25 @@ export function readableAgentLabel(agentId: string) {
   return curatedAgents.find((agent) => agent.id === agentId)?.role ?? labelFromUri(agentId);
 }
 
+export function findAgent(agentId: string) {
+  return curatedAgents.find((agent) => agent.id === agentId);
+}
+
+export function missionsForAgent(agentId: string) {
+  return agentMissions.filter((mission) => mission.agentId === agentId || mission.steps?.some((step) => step.agentId === agentId));
+}
+
 export function defaultMemory(): AgentMemory {
   return {
     projectName: "",
     audience: "",
+    industry: "",
+    tone: "",
+    riskTolerance: "",
+    walletExperience: "",
+    outputLength: "",
+    commonLinks: "",
+    doNotDo: "",
     context: "",
     preferences: "",
     lastUpdated: ""
@@ -605,10 +661,68 @@ export function memoryToPrompt(memory?: AgentMemory) {
   const lines = [
     memory.projectName ? `Project: ${memory.projectName}` : "",
     memory.audience ? `Audience: ${memory.audience}` : "",
+    memory.industry ? `Industry: ${memory.industry}` : "",
+    memory.tone ? `Tone: ${memory.tone}` : "",
+    memory.riskTolerance ? `Risk tolerance: ${memory.riskTolerance}` : "",
+    memory.walletExperience ? `Wallet experience: ${memory.walletExperience}` : "",
+    memory.outputLength ? `Preferred output length: ${memory.outputLength}` : "",
+    memory.commonLinks ? `Common links: ${memory.commonLinks}` : "",
+    memory.doNotDo ? `Do not do: ${memory.doNotDo}` : "",
     memory.context ? `Context: ${memory.context}` : "",
     memory.preferences ? `Preferences: ${memory.preferences}` : ""
   ].filter(Boolean);
   return lines.join("\n");
+}
+
+export function scoreAgentRun(run: Pick<AgentRunRecord, "appAgentId" | "task" | "constraints" | "url" | "result" | "source" | "outputFormat" | "status">): AgentConfidence {
+  if (run.status !== "Success" || !run.result.trim()) {
+    return { score: 20, label: "Low", reasons: ["The agent did not return a completed usable result."] };
+  }
+
+  const reasons: string[] = [];
+  let score = 35;
+  const result = run.result.toLowerCase();
+  const agent = findAgent(run.appAgentId);
+
+  if (run.task.trim().length > 20) {
+    score += 10;
+    reasons.push("The task was specific enough for the agent to execute.");
+  }
+  if (run.constraints.trim().length > 10) {
+    score += 10;
+    reasons.push("The run included constraints that shaped the output.");
+  }
+  if (run.result.length > 350) {
+    score += 12;
+    reasons.push("The output has enough detail to be useful.");
+  }
+  if (run.url) {
+    score += 8;
+    reasons.push("The run included a source URL for website-aware context.");
+  }
+  if (run.source === "LLM API" || run.source === "Somnia") {
+    score += 10;
+    reasons.push(`The output came from ${run.source}.`);
+  }
+  if (agent && run.task.toLowerCase().includes(agent.taskType.split("-")[0])) {
+    score += 5;
+    reasons.push("The selected agent matches the requested task area.");
+  }
+  if (run.outputFormat && result.includes(run.outputFormat === "x-post" ? "post" : run.outputFormat)) {
+    score += 5;
+    reasons.push("The output appears aligned with the selected result format.");
+  }
+  if (result.includes("fallback") || result.includes("failed") || result.includes("unavailable")) {
+    score -= 15;
+    reasons.push("The output contains fallback or failure language, so confidence is reduced.");
+  }
+
+  const bounded = Math.max(0, Math.min(100, score));
+  return {
+    score: bounded,
+    label: bounded >= 75 ? "High" : bounded >= 50 ? "Medium" : "Low",
+    reasons: reasons.slice(0, 4)
+  };
 }
 
 export function inferOutputFormat(agent: CuratedAgent, requested: OutputFormat): OutputFormat {

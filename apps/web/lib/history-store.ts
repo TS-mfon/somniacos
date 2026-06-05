@@ -1,10 +1,12 @@
 "use client";
 
 import { keccak256, toHex } from "viem";
-import { createProofReceipt, type AgentProofReceipt, type AgentRunRecord } from "./agent-engine";
+import { createProofReceipt, type AgentProofReceipt, type AgentRunRecord, type CompareSession, type MissionReceipt } from "./agent-engine";
 
 export const runHistoryKey = "somniacos.agentRuns";
 export const receiptHistoryKey = "somniacos.proofReceipts";
+export const missionReceiptHistoryKey = "somniacos.missionReceipts";
+export const compareSessionHistoryKey = "somniacos.compareSessions";
 
 export function loadRunHistory() {
   return readJson<AgentRunRecord[]>(runHistoryKey, []);
@@ -29,6 +31,24 @@ export function loadReceipts() {
 export function upsertReceipt(receipt: AgentProofReceipt) {
   const current = loadReceipts();
   writeJson(receiptHistoryKey, [receipt, ...current.filter((item) => item.receiptId !== receipt.receiptId)].slice(0, 120));
+}
+
+export function loadMissionReceipts() {
+  return readJson<MissionReceipt[]>(missionReceiptHistoryKey, []);
+}
+
+export function upsertMissionReceipt(receipt: MissionReceipt) {
+  const current = loadMissionReceipts();
+  writeJson(missionReceiptHistoryKey, [receipt, ...current.filter((item) => item.receiptId !== receipt.receiptId)].slice(0, 80));
+}
+
+export function loadCompareSessions() {
+  return readJson<CompareSession[]>(compareSessionHistoryKey, []);
+}
+
+export function upsertCompareSession(session: CompareSession) {
+  const current = loadCompareSessions();
+  writeJson(compareSessionHistoryKey, [session, ...current.filter((item) => item.id !== session.id)].slice(0, 40));
 }
 
 export function createReceipt(run: AgentRunRecord): AgentProofReceipt {

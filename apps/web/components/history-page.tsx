@@ -66,7 +66,7 @@ export function HistoryPage() {
             <button key={`${run.requestId}-${run.txHash}`} onClick={() => setSelected(run)} className="rounded-2xl border border-white/10 bg-[#101010] p-4 text-left transition hover:border-signal/35">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="font-semibold text-white">{run.artifact?.type === "token" ? `${run.artifact.name} (${run.artifact.symbol})` : readableAgentLabel(run.appAgentId)}</span>
-                <span className="rounded-full border border-white/10 px-2 py-1 font-mono text-[11px] text-white/45">{run.status}</span>
+                <span className="rounded-full border border-white/10 px-2 py-1 font-mono text-[11px] text-white/45">{run.confidence ? `${run.confidence.label} ${run.confidence.score}%` : run.status}</span>
               </div>
               <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/50">{run.artifact?.type === "token" ? `Token deployed at ${run.artifact.tokenAddress}` : run.result || run.task}</p>
               <div className="mt-3 flex flex-wrap gap-3 font-mono text-xs text-white/35">
@@ -100,6 +100,7 @@ function HistoryDetail({ run }: { run: AgentRunRecord }) {
       <p className="font-mono text-xs uppercase tracking-[0.2em] text-signal">Selected record</p>
       <h3 className="mt-3 text-2xl font-semibold text-white">{run.artifact?.type === "token" ? run.artifact.name : readableAgentLabel(run.appAgentId)}</h3>
       <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-white/62">{run.result}</p>
+      {run.confidence ? <p className="mt-3 rounded-2xl border border-signal/20 bg-signal/10 p-3 text-xs leading-5 text-signal">Confidence: {run.confidence.label} ({run.confidence.score}%). {run.confidence.reasons.join(" ")}</p> : null}
       {run.artifact?.type === "token" ? (
         <div className="mt-4 rounded-2xl border border-signal/20 bg-signal/10 p-3 text-sm text-white/70">
           <p className="break-all">Token: {run.artifact.tokenAddress}</p>

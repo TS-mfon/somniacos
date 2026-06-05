@@ -18,7 +18,7 @@ export default function AgentsPage() {
             <div className="mt-5 space-y-2 text-sm text-white/62">
               {agent.examples.map((example) => <p key={example}>- {example}</p>)}
             </div>
-            <Link href={`/app/agent-workbench?agent=${agent.id}`} className="mt-5 inline-flex rounded-xl bg-signal px-4 py-2 text-sm font-semibold text-black">Run task</Link>
+            <Link href={agent.id === "token-launcher" ? "/app/missions?mission=launch-token" : `/app/agent-workbench?agent=${agent.id}`} className="mt-5 inline-flex rounded-xl bg-signal px-4 py-2 text-sm font-semibold text-black">{agent.id === "token-launcher" ? "Open mission" : "Run task"}</Link>
           </article>
         ))}
       </div>
