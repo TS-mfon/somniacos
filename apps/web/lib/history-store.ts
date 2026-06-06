@@ -9,7 +9,7 @@ export const missionReceiptHistoryKey = "somniacos.missionReceipts";
 export const compareSessionHistoryKey = "somniacos.compareSessions";
 
 export function loadRunHistory() {
-  return readJson<AgentRunRecord[]>(runHistoryKey, []);
+  return readJson<AgentRunRecord[]>(runHistoryKey, []).filter((run) => String(run.source) !== "SomniacOS Local");
 }
 
 export function saveRunHistory(runs: AgentRunRecord[]) {
@@ -25,7 +25,7 @@ export function upsertRunHistory(run: AgentRunRecord) {
 }
 
 export function loadReceipts() {
-  return readJson<AgentProofReceipt[]>(receiptHistoryKey, []);
+  return readJson<AgentProofReceipt[]>(receiptHistoryKey, []).filter((receipt) => String(receipt.source) !== "SomniacOS Local");
 }
 
 export function upsertReceipt(receipt: AgentProofReceipt) {
