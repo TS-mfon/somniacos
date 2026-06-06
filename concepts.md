@@ -4,7 +4,7 @@ This file is the submission-ready concept document for SomniacOS. It mirrors and
 
 ## Project Name
 
-SomniacOS
+SomniacOS: The Autonomous Economy Layer
 
 ## Tagline
 
@@ -13,6 +13,70 @@ The Autonomous Economy Layer
 ## One-Sentence Description
 
 SomniacOS is an agentic operating system on Somnia where users launch specialist AI agents through wallet-signed workflows, receive visible task outputs, pay transparent protocol fees, and build toward a persistent onchain economy of agents, memory, reputation, organizations, and autonomous work.
+
+## Project Challenges & Tracks
+
+**Build the most novel and high-impact agent-driven application on Somnia.**
+
+SomniacOS addresses this challenge by treating agents as first-class onchain economic actors rather than chatbot interfaces. Every user-triggered agent run is connected to a wallet signature, a paid Somnia Agent request, an OS process, an executable capability, a callback, and an inspectable proof trail.
+
+## Checkpoint 3 Submission
+
+Checkpoint 3 advances SomniacOS from a specialist-agent Workbench into an agentic economic operating system with:
+
+- Real wallet-signed Somnia Agent execution.
+- Deployed Agentic OS Kernel contracts.
+- Specialist Workbench agents for crypto, builder, work, and everyday tasks.
+- Structured multi-agent Missions and visible agent-chain previews.
+- Paid multi-agent Compare with side-by-side live results.
+- Somnia callback-first result recovery.
+- Public agent profiles and capability mappings.
+- Mission receipts, proof receipts, and result History.
+- Saved user context and explainable confidence scoring.
+- A non-custodial token-launch mission.
+- Protocol monetization through a `0.1 STT` fee included in workflow transactions.
+- Production deployment at `https://somniacos.vercel.app`.
+
+## Challenge Explanation
+
+Most AI dApps are wrappers around offchain models. SomniacOS instead uses Somnia as the execution and proof layer for agent work. Users sign paid requests to the deployed router, the router invokes the Somnia Agents platform, and Somnia validators return the final callback result.
+
+The operating-system model makes agent execution composable:
+
+- The user is the process owner.
+- The specialist agent is the worker.
+- The capability defines the permitted work.
+- The autonomy policy defines spending and execution boundaries.
+- The process manager records requests and steps.
+- The router connects wallet actions to Somnia Agents.
+- The callback becomes the authoritative output.
+- The receipt connects the result to its transaction proof.
+
+## How The Challenge Is Incorporated
+
+SomniacOS uses Somnia Agentic L1 capabilities across the complete user flow:
+
+- **LLM inference:** normal tasks without URLs run through the Somnia LLM Agent.
+- **Website parsing:** when a user attaches a URL, the request runs through the Somnia Website Parser Agent.
+- **Agent callbacks:** completed outputs are returned to `SomniacAgentRouterV2` and displayed as the real result.
+- **Onchain processes:** each workflow creates a policy, process, step, request ID, and fee trail.
+- **Wallet-backed execution:** users approve sensitive actions without sharing private keys.
+- **Agent coordination:** Missions and handoffs connect specialist agents around larger objectives.
+- **Paid comparison:** Compare runs the same task against multiple paid agents and displays callback-backed outputs side-by-side.
+
+SomniacOS deliberately does not invent web research. Users attach source URLs when they require source-backed research. Without a URL, the Somnia LLM Agent performs the task using its model knowledge and the UI does not represent the answer as live web research.
+
+## Submission Details
+
+SomniacOS began as a vision for a persistent autonomous AI economy where agents can provide services, coordinate work, earn revenue, and form organizations. The implementation focuses on the foundational primitive required for that economy: reliable, paid, wallet-backed agent work.
+
+When a visitor runs an agent, the dApp connects the wallet, switches to Somnia Shannon, quotes the combined Somnia Agent deposit and protocol fee, submits one router transaction, extracts the request ID, saves the pending request, waits for the validator callback, and displays the final callback output. The result is stored in History with its source, request ID, transaction hash, confidence score, next actions, and agent handoffs.
+
+Workbench handles regular single-agent tasks. Missions handles structured workflows and wallet actions. Compare pays and runs multiple agents for side-by-side evaluation. Receipts organize proof metadata. Agent profiles explain each specialist's role and compatible missions.
+
+The deployed OS Kernel consists of `ProtocolFeeVault`, `CapabilityRegistry`, `AutonomyPolicyRegistry`, `ProcessManager`, `MemoryLedger`, and `SomniacAgentRouterV2`. Together they model fees, capabilities, policies, processes, memory references, requests, callbacks, and outputs.
+
+The current implementation is functional rather than simulated. Real callbacks already exist for content writing, code auditing, governance drafting, token research, marketing, and comparison tasks.
 
 ## Problem
 
@@ -198,17 +262,18 @@ The `/api/agents/run` route builds an agent-specific prompt from:
 - transaction hash
 - fetched URL references
 
-If `OPENAI_API_KEY` is configured, the route uses OpenAI. If not, it uses a public LLM fallback. If the public fallback times out, it returns a deterministic local response. This is important because demos should not fail into a blank state when a provider is slow.
+The visitor-facing Workbench and Missions do not accept deterministic local output. Their authoritative result is the callback returned by the paid Somnia Agent request. The `/api/agents/run` route remains available for strict live-provider execution, but it returns a structured error instead of mock text when its provider is unavailable.
+
+For normal tasks without URLs, the router invokes the Somnia LLM Agent. When the user attaches a source URL, the router invokes the Somnia Website Parser Agent. SomniacOS does not claim automatic web search: users attach links when source-backed research is required.
 
 ## Provenance
 
 Every result has a source:
 
 - `Somnia`: result from a Somnia callback.
-- `LLM API`: result from OpenAI or public LLM fallback.
-- `SomniacOS Local`: deterministic fallback used when external providers fail.
+- `LLM API`: strict result from a configured live provider used by compatible execution surfaces.
 
-This keeps the product honest while preserving usability.
+No visitor-facing run is completed with a local deterministic source. Delayed callbacks remain pending and recoverable from History rather than being replaced by generic text.
 
 ## Monetization
 
@@ -237,7 +302,7 @@ The project frames agent execution as an operating system: policies, processes, 
 
 ### Autonomous Performance
 
-SomniacOS includes the architecture for autonomous runtime behavior and implements reliable agent execution with fallbacks, result persistence, handoffs, and process-based proof trails.
+SomniacOS includes the architecture for autonomous runtime behavior and implements callback-first agent execution, pending-request recovery, result persistence, handoffs, and process-based proof trails.
 
 ## Roadmap
 

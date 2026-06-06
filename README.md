@@ -51,10 +51,10 @@ Every user-facing surface is backed by deployed Solidity contracts on Somnia Sha
                 │ wallet (viem injected)     │ server RPC reads           │
                 ▼                            ▼                            ▼
        ┌─────────────────┐      ┌──────────────────────────┐    ┌──────────────────┐
-       │ Somnia Shannon  │      │ Somnia Agents Platform   │    │ LLM provider     │
+       │ Somnia Shannon  │      │ Somnia Agents Platform   │    │ Strict API path  │
        │ chain id 50312  │◀────▶│  (LLM / Website / JSON)  │    │ OpenAI Responses │
-       │                 │      │  via SomniacAgentRouter  │    │  + Pollinations  │
-       └────────┬────────┘      └──────────────────────────┘    │  fallback        │
+       │                 │      │  via SomniacAgentRouter  │    │  no mock output  │
+       └────────┬────────┘      └──────────────────────────┘    │                 │
                 │                                                └──────────────────┘
    ┌────────────┼─────────────────────────────────────────────┐
    │   Core economy contracts (packages/contracts/SomniacOS.sol) │
@@ -143,7 +143,7 @@ pnpm contracts:deploy:os      # deploy the agentic OS kernel
 
 | Key | Purpose |
 |-----|---------|
-| `OPENAI_API_KEY` | Preferred LLM provider for `/api/agents/run`. When absent, the route falls back to `text.pollinations.ai`, then a deterministic local responder. |
+| `OPENAI_API_KEY` | Preferred LLM provider for strict `/api/agents/run` execution. When absent, the route may use `text.pollinations.ai`; provider failure returns an error, never deterministic mock output. |
 | `OPENAI_MODEL` | Model id (default `gpt-4o-mini`). |
 | `PRIVATE_KEY` | Used by `scripts/deploy-*.ts` and `scripts/seed-onchain-activity.ts`. **Never commit.** |
 | `SOMNIA_RPC_URL` | Server-side RPC (defaults to the public RPC). |
@@ -231,11 +231,11 @@ Receipt fields include:
 
 ### Result Compare
 
-Compare runs the same task through two or three specialist agents using the real `/api/agents/run` route. It is intentionally labeled as an API-backed comparison lab, not an onchain proof surface. Users can inspect which answer is better, then run the selected task through Workbench or Missions when they need wallet-backed proof.
+Compare creates paid Somnia requests for two or three specialist agents and displays the callback-backed outputs side-by-side. The current router requires one wallet transaction per selected agent.
 
 ### Agent Confidence Score
 
-Every new result can carry an output-confidence score. The score is not a truth guarantee. It is a usability signal based on task specificity, constraints, output detail, source mode, format alignment, agent/task fit, and fallback language. Scores render in live results, History, and Compare.
+Every new result can carry an output-confidence score. The score is not a truth guarantee. It is a usability signal based on task specificity, constraints, output detail, source mode, format alignment, and agent/task fit. Scores render in live results, History, and Compare.
 
 ### Saved User Context
 

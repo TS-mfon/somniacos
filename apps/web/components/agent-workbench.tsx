@@ -250,7 +250,20 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     async function recoverPendingRuns() {
       const recovered = await Promise.all(pendingRuns.map(async (run) => {
         try {
-          return await readRun(run.requestId, run.txHash as Hash | undefined);
+          const onchain = await readRun(run.requestId, run.txHash as Hash | undefined);
+          const merged: AgentRunRecord = {
+            ...run,
+            ...onchain,
+            constraints: run.constraints,
+            missionId: run.missionId,
+            outputFormat: run.outputFormat,
+            nextActions: run.nextActions,
+            handoffs: run.handoffs,
+            memorySnapshot: run.memorySnapshot,
+            source: "Somnia",
+            completedAt: onchain.status === "Pending" ? "" : new Date().toISOString()
+          };
+          return { ...merged, confidence: scoreAgentRun(merged) };
         } catch {
           return run;
         }
@@ -265,9 +278,11 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       await reload();
     }
     const timeout = window.setTimeout(() => void recoverPendingRuns(), 2500);
+    const interval = window.setInterval(() => void recoverPendingRuns(), 12_000);
     return () => {
       cancelled = true;
       window.clearTimeout(timeout);
+      window.clearInterval(interval);
     };
   }, [pendingRuns, reload]);
 
@@ -388,43 +403,32 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       if (!requestId) throw new Error("Workflow submitted, but the OSAgentRunRequested event was not found in the receipt.");
 
       setTx({ phase: "callback", status: `OS workflow request #${requestId} is running. Waiting for Somnia validator callback.`, hash });
-      const initial = await readRun(requestId, hash);
-      setActiveRun(initial);
-      saveRun(initial);
-
-      setTx({ phase: "agent", status: "Transaction signed. Running the specialist agent and preparing the result.", hash });
-      const finalRun = await executeAgent({
-        requestId,
-        hash,
+      const runContext = {
         account,
         selected,
         task: goal.trim(),
         constraints: constraints.trim(),
         urls,
-        modeLabel: modeLabels[mode] ?? "LLM",
         missionId,
         outputFormat,
         memory
-      });
-      setActiveRun(finalRun);
-      saveRun(finalRun);
+      };
+      const initial = enrichSomniaRun(await readRun(requestId, hash), runContext);
+      setActiveRun(initial);
+      saveRun(initial);
+
+      setTx({ phase: "callback", status: `Paid request #${requestId} is running through the Somnia ${mode === 1 ? "Website Parser" : "LLM"} Agent. Waiting for the real callback.`, hash });
+      const callbackRun = enrichSomniaRun(await waitForRun(requestId, hash), runContext);
+      setActiveRun(callbackRun);
+      saveRun(callbackRun);
       await reload();
       await refresh(account);
 
-      if (finalRun.status === "Success") {
-        setTx({ phase: "success", status: "Confirmed. The agent result is visible below and the protocol fee is recorded.", hash });
-        setResultModal(finalRun);
+      if (callbackRun.status === "Success") {
+        setTx({ phase: "success", status: "Confirmed. The real Somnia Agent callback is visible below and saved to History.", hash });
+        setResultModal(callbackRun);
       } else {
-        setTx({ phase: "callback", status: "LLM API did not return a result yet. Checking for Somnia callback.", hash });
-        const callbackRun = await waitForRun(requestId, hash);
-        setActiveRun(callbackRun);
-        saveRun(callbackRun);
-        if (callbackRun.status === "Success") {
-          setTx({ phase: "success", status: "Confirmed. The Somnia callback result is visible below.", hash });
-          setResultModal(callbackRun);
-        } else {
-          setTx({ phase: "failed", status: callbackRun.status, hash, error: callbackRun.result || "Somnia Agent did not return a usable result.", action: "Refresh later or run the task again." });
-        }
+        setTx({ phase: "failed", status: callbackRun.status, hash, error: callbackRun.result || "Somnia Agent did not return a usable result.", action: "The signed request remains visible in History. Retry only if the callback failed or timed out." });
       }
     } catch (error) {
       setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
@@ -1095,121 +1099,51 @@ async function readRun(requestId: string, txHash?: Hash): Promise<AgentRunRecord
   };
 }
 
-async function executeAgent({
-  requestId,
-  hash,
-  account,
-  selected,
-  task,
-  constraints,
-  urls,
-  modeLabel,
-  missionId,
-  outputFormat,
-  memory
-}: {
-  requestId: string;
-  hash: Hash;
+function memorySnapshot(memory: AgentMemory) {
+  return [memory.projectName, memory.audience, memory.context, memory.preferences].filter(Boolean).join(" | ");
+}
+
+function enrichSomniaRun(run: AgentRunRecord, context: {
   account: Address;
   selected: CuratedAgent;
   task: string;
   constraints: string;
   urls: string[];
-  modeLabel: AgentRunRecord["mode"];
   missionId: string;
   outputFormat: OutputFormat;
   memory: AgentMemory;
-}): Promise<AgentRunRecord> {
-  const response = await fetch("/api/agents/run", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      agentId: selected.id,
-      task,
-      constraints,
-      urls,
-      requestId,
-      txHash: hash,
-      missionId,
-      outputFormat,
-      memory
-    })
-  });
-  const payload = await response.json() as {
-    result?: string;
-    source?: AgentRunRecord["source"];
-    provider?: string;
-    providerError?: string;
-    error?: string;
-    outputFormat?: OutputFormat;
-    nextActions?: AgentNextAction[];
-    handoffs?: AgentRunRecord["handoffs"];
-    memoryUpdates?: string[];
+}) {
+  const enriched: AgentRunRecord = {
+    ...run,
+    user: context.account,
+    appAgentId: context.selected.id,
+    task: context.task,
+    constraints: context.constraints,
+    url: context.urls[0] ?? run.url,
+    source: "Somnia",
+    missionId: context.missionId,
+    outputFormat: context.outputFormat,
+    nextActions: buildNextActions(context.selected.id, context.task, context.outputFormat),
+    handoffs: buildAgentHandoffs(context.selected.id, context.task),
+    memorySnapshot: memorySnapshot(context.memory),
+    completedAt: run.status === "Pending" ? "" : new Date().toISOString()
   };
-  if (!response.ok || !payload.result) {
-    const failedRun: AgentRunRecord = {
-      requestId,
-      user: account,
-      appAgentId: selected.id,
-      task,
-      constraints,
-      url: urls[0] ?? "",
-      somniaAgentId: "",
-      mode: modeLabel,
-      status: "Failed",
-      result: payload.error ?? "Agent execution failed.",
-      source: payload.source ?? "LLM API",
-      missionId,
-      outputFormat,
-      nextActions: buildNextActions(selected.id, task, outputFormat),
-      handoffs: buildAgentHandoffs(selected.id, task),
-      memorySnapshot: memorySnapshot(memory),
-      createdAt: "",
-      completedAt: new Date().toISOString(),
-      txHash: hash
-    };
-    return { ...failedRun, confidence: scoreAgentRun(failedRun) };
-  }
-  const successfulRun: AgentRunRecord = {
-    requestId,
-    user: account,
-    appAgentId: selected.id,
-    task,
-    constraints,
-    url: urls[0] ?? "",
-    somniaAgentId: "",
-    mode: modeLabel,
-    status: "Success",
-    result: payload.result,
-    source: payload.source ?? "LLM API",
-    missionId,
-    outputFormat: payload.outputFormat ?? outputFormat,
-    nextActions: payload.nextActions ?? buildNextActions(selected.id, task, outputFormat),
-    handoffs: payload.handoffs ?? buildAgentHandoffs(selected.id, task),
-    memorySnapshot: [
-      payload.provider ? `Provider: ${payload.provider}` : "",
-      payload.providerError ? `Provider fallback: ${payload.providerError}` : "",
-      payload.memoryUpdates?.join("\n") || memorySnapshot(memory)
-    ].filter(Boolean).join("\n"),
-    createdAt: "",
-    completedAt: new Date().toISOString(),
-    txHash: hash
-  };
-  return { ...successfulRun, confidence: scoreAgentRun(successfulRun) };
-}
-
-function memorySnapshot(memory: AgentMemory) {
-  return [memory.projectName, memory.audience, memory.context, memory.preferences].filter(Boolean).join(" | ");
+  return { ...enriched, confidence: scoreAgentRun(enriched) };
 }
 
 async function waitForRun(requestId: string, txHash?: Hash) {
   const started = Date.now();
+  let lastReadError = "";
   while (Date.now() - started < 8 * 60_000) {
-    const run = await readRun(requestId, txHash);
-    if (run.status !== "Pending") return run;
+    try {
+      const run = await readRun(requestId, txHash);
+      if (run.status !== "Pending") return run;
+    } catch (error) {
+      lastReadError = summarizeError(error);
+    }
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
-  throw new Error("Somnia Agent callback has not arrived yet. The request is still onchain; refresh the Workbench later.");
+  throw new Error(`Somnia Agent callback has not arrived yet. The paid request is still onchain and saved in History.${lastReadError ? ` Last read error: ${lastReadError}` : ""}`);
 }
 
 function bufferedGas(gas: bigint) {

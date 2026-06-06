@@ -6,13 +6,48 @@ SomniacOS is **The Autonomous Economy Layer** for Somnia: a persistent onchain o
 
 The project is intentionally not a chatbot wrapper, static marketplace, or simulated dashboard. It is designed as an **Agentic Economic Operating System**: a dApp where users interact with agents as working economic actors. A visitor connects a wallet, chooses a specialist agent, describes a task, signs one transaction, and receives a visible result with provenance, follow-up actions, and onchain proof. The application charges a protocol fee of **0.1 STT per workflow transaction** through `ProtocolFeeVault`, while the same user transaction also funds the Somnia Agents request path.
 
-SomniacOS is built around one principle: **no fake state**. Visitor-visible economic claims come from the connected wallet, deployed Somnia contracts, decoded events, direct contract reads, or explicit user input. Agent outputs are labelled by provenance: `Somnia`, `LLM API`, or `SomniacOS Local`, so judges can see whether a response came from an onchain callback, an LLM provider, or the deterministic resilience fallback.
+SomniacOS is built around one principle: **no fake state**. Visitor-visible economic claims come from the connected wallet, deployed Somnia contracts, decoded events, direct contract reads, or explicit user input. Workbench and Mission outputs are authoritative only when returned by a real Somnia Agent callback. Delayed callbacks remain pending and recoverable; they are never replaced by deterministic mock output.
 
 Live dApp: `https://somniacos.vercel.app`
 
 Chain: Somnia Shannon Testnet, chain id `50312`
 
-Primary app surfaces: `Agents`, `Workbench`, `Revenue`
+Primary app surfaces: `Agents`, `Workbench`, `Missions`, `Compare`, `Receipts`, `History`, `Docs`
+
+## Checkpoint 3 Submission
+
+### Project Name
+
+**SomniacOS: The Autonomous Economy Layer**
+
+### Project Description
+
+SomniacOS is an agentic operating system on Somnia where users launch specialist AI agents through wallet-signed workflows. Each paid request creates an OS process, invokes a Somnia Agent, records protocol revenue, waits for the validator callback, displays the real output, and preserves transaction proof.
+
+### Project Challenges & Tracks
+
+**Build the most novel and high-impact agent-driven application on Somnia.**
+
+### Challenge Explanation
+
+SomniacOS makes agents first-class onchain economic actors. Instead of placing a chatbot inside a web3 interface, the application models agent work as capabilities, policies, processes, paid requests, callbacks, receipts, and handoffs.
+
+### How The Challenge Is Incorporated
+
+- Normal tasks use the Somnia LLM Agent.
+- Tasks with attached links use the Somnia Website Parser Agent.
+- Wallet-signed router transactions create real paid agent requests.
+- Validator callbacks become the authoritative user-visible results.
+- Missions coordinate agents around larger goals and wallet actions.
+- Compare pays and runs multiple agents for side-by-side evaluation.
+- Receipts and History preserve request IDs, outputs, and transaction proof.
+- The protocol earns `0.1 STT` inside each workflow transaction.
+
+### Submission Details
+
+Checkpoint 3 delivers a deployed Agentic OS Kernel, functional specialist agents, callback-first Workbench execution, structured Missions, paid Compare, public agent profiles, mission receipts, saved context, confidence scoring, History, and a non-custodial token-launch mission.
+
+The complete visitor flow is wallet-backed. The user connects, switches to Somnia Shannon, submits a paid router transaction, receives a request ID, waits for the Somnia callback, and sees the real result. If the callback is delayed, the request remains pending in History rather than being replaced by generic fallback text.
 
 ## 2. Core Vision
 
@@ -176,9 +211,9 @@ SomniacOS treats each agent as a specialist worker with a defined role and task 
 - Output format selection.
 - User-owned memory.
 - URL reference fetching.
-- LLM execution.
-- Public provider fallback.
-- Deterministic local fallback.
+- Somnia LLM Agent execution.
+- Somnia Website Parser execution for attached URLs.
+- Callback-first result recovery.
 - Handoffs to other agents.
 - Next-action generation.
 - Result provenance.
@@ -225,15 +260,14 @@ The `/api/agents/run` route is the main AI execution path. It accepts:
 }
 ```
 
-The route builds a role-specific system prompt from the selected agent, task, constraints, memory, output format, transaction hash, and fetched references. If `OPENAI_API_KEY` exists, it uses the OpenAI Responses API. If OpenAI is not configured, it uses a public LLM fallback. If that provider times out or fails, it returns a deterministic local agent response so the user still receives a visible deliverable.
+The route builds a role-specific system prompt from the selected agent, task, constraints, memory, output format, transaction hash, and fetched references. It is strict by default: if its live provider is unavailable, it returns a structured error and never generates deterministic mock output.
 
 The system is honest about provenance:
 
-- `source: "LLM API"` means the response came from OpenAI or the public fallback.
-- `source: "SomniacOS Local"` means the external model path failed and a deterministic fallback produced a useful working result.
 - `source: "Somnia"` means the result came from a Somnia callback event.
+- `source: "LLM API"` means a compatible surface received a result from a configured live provider.
 
-This avoids fake success states while still keeping the product usable.
+Workbench and Missions use the Somnia callback as the authoritative output. For normal tasks, the router invokes Somnia LLM inference. When a user attaches a URL, the router invokes Somnia Website Parser. The system does not perform automatic web search or claim unsupported live facts; users attach source URLs when they require source-backed research.
 
 ## 8. Wallet and Transaction Flow
 
@@ -249,9 +283,10 @@ When a user clicks **Run agent**, the frontend:
 6. Estimates gas and applies a buffer.
 7. Sends the transaction with `msg.value = platform fee + protocol fee`.
 8. Waits for receipt.
-9. Runs the server agent output path.
-10. Polls or reconstructs callback results.
-11. Saves and displays the result.
+9. Saves the paid request as pending.
+10. Polls or reconstructs the real Somnia callback.
+11. Enriches the callback with mission metadata, handoffs, and confidence.
+12. Saves and displays the result.
 
 The fee is not a separate second transaction. The protocol fee and Somnia Agents fee are paid together inside the same workflow transaction.
 
@@ -292,7 +327,7 @@ The product includes explicit error handling because judge demos fail when users
 - Missing callback.
 - Delayed event indexing.
 
-The UI provides next actions instead of raw stack traces. For example, insufficient STT prompts the user to fund Somnia Shannon; wrong network prompts the app to switch; provider timeout still returns a visible local agent output.
+The UI provides next actions instead of raw stack traces. For example, insufficient STT prompts the user to fund Somnia Shannon; wrong network prompts the app to switch; delayed callbacks remain recoverable in History; and failed callbacks are shown honestly instead of being replaced with mock text.
 
 ## 11. Monetization
 
@@ -327,7 +362,7 @@ The operating-system framing is novel: agent work is modeled as policies, proces
 
 ### Autonomous Performance
 
-The project includes the architecture for always-on runtime behavior and already implements a robust execution pipeline with fallbacks, handoffs, memory, next actions, event-derived results, and process tracking. The product remains usable under provider failure instead of collapsing into blank states.
+The project includes the architecture for always-on runtime behavior and already implements a robust callback-first execution pipeline with pending-request recovery, handoffs, memory, next actions, event-derived results, and process tracking. The product remains honest under provider failure and preserves recoverable paid requests instead of fabricating results.
 
 ## 13. Demo Script
 

@@ -6,7 +6,7 @@ import { createReceipt, loadReceipts, loadRunHistory } from "../lib/history-stor
 import { readableAgentLabel, type AgentProofReceipt, type AgentRunRecord } from "../lib/agent-engine";
 import { somnia } from "../lib/contracts";
 
-type HistoryFilter = "all" | "agent" | "token" | "pending" | "failed" | "somnia" | "llm" | "local";
+type HistoryFilter = "all" | "agent" | "token" | "pending" | "failed" | "somnia" | "llm";
 
 export function HistoryPage() {
   const [runs, setRuns] = useState<AgentRunRecord[]>([]);
@@ -35,7 +35,6 @@ export function HistoryPage() {
     if (filter === "failed") return run.status === "Failed" || run.status === "TimedOut";
     if (filter === "somnia") return run.source === "Somnia";
     if (filter === "llm") return run.source === "LLM API";
-    if (filter === "local") return run.source === "SomniacOS Local";
     return true;
   }), [filter, runs]);
 
@@ -57,7 +56,6 @@ export function HistoryPage() {
               <option value="failed">Failed</option>
               <option value="somnia">Somnia source</option>
               <option value="llm">LLM source</option>
-              <option value="local">Local fallback</option>
             </select>
           </label>
         </div>

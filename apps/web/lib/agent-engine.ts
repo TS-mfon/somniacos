@@ -48,7 +48,7 @@ export type AgentRunRecord = {
   mode: "LLM" | "Website";
   status: "Pending" | "Success" | "Failed" | "TimedOut";
   result: string;
-  source?: "Somnia" | "LLM API" | "SomniacOS Local";
+  source?: "Somnia" | "LLM API";
   missionId?: string;
   outputFormat?: OutputFormat;
   nextActions?: AgentNextAction[];
@@ -785,7 +785,7 @@ export function createProofReceipt(run: AgentRunRecord, actionType: AgentProofRe
     missionRunId: run.missionRunId,
     agentId: run.appAgentId,
     actionType,
-    source: run.artifact?.type === "token" ? "TokenFactory" : run.source ?? "SomniacOS Local",
+    source: run.artifact?.type === "token" ? "TokenFactory" : run.source ?? "Somnia",
     txHash: run.txHash,
     resultHash: run.result ? `local:${run.result.length}:${run.result.slice(0, 24)}` : undefined,
     tokenAddress: run.artifact?.type === "token" ? run.artifact.tokenAddress : undefined,
@@ -823,19 +823,6 @@ export function scoreAgentRun(run: Pick<AgentRunRecord, "appAgentId" | "task" | 
         { label: "Completion", score: 20, reason: "The run did not complete successfully." },
         { label: "Live source", score: run.source === "Somnia" || run.source === "LLM API" ? 40 : 10, reason: "The source could not produce a usable result." },
         { label: "Actionability", score: 15, reason: "No completed output is available to act on." }
-      ]
-    };
-  }
-
-  if (run.source === "SomniacOS Local") {
-    return {
-      score: 32,
-      label: "Low",
-      reasons: ["This result came from the local resilience path, not a live LLM or Somnia callback."],
-      dimensions: [
-        { label: "Live source", score: 10, reason: "Local fallback is not accepted as a live compare answer." },
-        { label: "Specificity", score: Math.min(55, run.result.length > 350 ? 55 : 35), reason: "The output may be structured but is not provider generated." },
-        { label: "Proof", score: 20, reason: "No live provider proof is attached to this output." }
       ]
     };
   }
