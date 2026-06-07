@@ -28,6 +28,8 @@ import {
 import { loadRunHistory, upsertMissionReceipt, upsertRunHistory } from "../lib/history-store";
 import { summarizeError } from "../lib/onchain-state";
 
+const DEEP_MODE_DIRECTIVE = "DEEP MODE: First privately outline sub-questions, then research each. Return six sections: (1) Executive summary, (2) Evidence with source URLs, (3) Conflicting views or unknowns, (4) Confidence per claim (low/med/high), (5) Open questions, (6) Recommended next agents. Cite every non-trivial claim inline. Aim for 800-1500 words.";
+
 const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
 
 const statusLabels: Record<number, AgentRunRecord["status"]> = {
@@ -115,6 +117,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   const [outputFormat, setOutputFormat] = useState<OutputFormat>(missionMode ? agentMissions[0].outputFormat : inferOutputFormat(defaultAgent, "auto"));
   const [goal, setGoal] = useState(missionMode ? agentMissions[0].task : defaultAgent.defaultTask);
   const [constraints, setConstraints] = useState(missionMode ? agentMissions[0].constraints : defaultAgent.defaultConstraints);
+  const [deepMode, setDeepMode] = useState(false);
   const [webUrls, setWebUrls] = useState("");
   const [memory, setMemory] = useState<AgentMemory>(defaultMemory());
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -250,10 +253,19 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     async function recoverPendingRuns() {
       const recovered = await Promise.all(pendingRuns.map(async (run) => {
         try {
-          const onchain = await readRun(run.requestId, run.txHash as Hash | undefined);
+          let requestId = run.requestId;
+          if (requestId.startsWith("pending-") && run.txHash) {
+            const receipt = await publicClient.getTransactionReceipt({ hash: run.txHash as Hash }).catch(() => null);
+            if (!receipt || receipt.status !== "success") return run;
+            const extracted = extractRequestId(receipt.logs);
+            if (!extracted) return run;
+            requestId = extracted;
+          }
+          const onchain = await readRun(requestId, run.txHash as Hash | undefined);
           const merged: AgentRunRecord = {
             ...run,
             ...onchain,
+            requestId,
             constraints: run.constraints,
             missionId: run.missionId,
             outputFormat: run.outputFormat,
@@ -292,6 +304,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     setConstraints(agent.defaultConstraints);
     setOutputFormat(inferOutputFormat(agent, "auto"));
     setWebUrls("");
+    if (!agent.allowsDeepMode) setDeepMode(false);
   }
 
   function applyMission(id: string) {
@@ -351,12 +364,59 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     }
   }
 
+  async function retryCallback() {
+    const target = activeRun ?? pendingRuns[0];
+    if (!target || !target.txHash) return;
+    try {
+      setTx({ phase: "callback", status: "Re-reading Somnia callback for the existing request.", hash: target.txHash as Hash });
+      let requestId = target.requestId;
+      if (requestId.startsWith("pending-")) {
+        const receipt = await publicClient.getTransactionReceipt({ hash: target.txHash as Hash }).catch(() => null);
+        if (!receipt || receipt.status !== "success") {
+          setTx({ phase: "callback", status: "Transaction has not been mined yet. If gas is low, use Speed Up in your wallet.", hash: target.txHash as Hash });
+          return;
+        }
+        const extracted = extractRequestId(receipt.logs);
+        if (!extracted) throw new Error("Workflow submitted, but the OSAgentRunRequested event was not found in the receipt.");
+        requestId = extracted;
+      }
+      const fresh = await readRun(requestId, target.txHash as Hash);
+      const merged: AgentRunRecord = {
+        ...target,
+        ...fresh,
+        requestId,
+        constraints: target.constraints,
+        missionId: target.missionId,
+        outputFormat: target.outputFormat,
+        memorySnapshot: target.memorySnapshot,
+        source: "Somnia",
+        completedAt: fresh.status === "Pending" ? "" : new Date().toISOString()
+      };
+      saveRun(merged);
+      setActiveRun(merged);
+      if (merged.status === "Success") {
+        setTx({ phase: "success", status: "Callback recovered. Result is visible below and saved to History.", hash: target.txHash as Hash });
+        setResultModal(merged);
+      } else if (merged.status === "Pending") {
+        setTx({ phase: "callback", status: "Somnia callback has not arrived yet. Try again in a moment — no re-payment needed.", hash: target.txHash as Hash });
+      } else {
+        setTx({ phase: "failed", status: merged.status, hash: target.txHash as Hash, error: merged.result || "Somnia Agent did not return a usable result.", action: "The signed request is still in History. Retry only if the callback failed or timed out." });
+      }
+    } catch (error) {
+      setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
+    }
+  }
+
   async function executeAgentWorkflow() {
     try {
       setTx({ phase: "wallet", status: "Checking wallet and task details" });
       if (!routerConfigured) throw new Error("SomniacOS fee router is not deployed yet.");
       validateWorkbenchInput(goal, constraints, allUrls);
 
+      const deepActive = deepMode && selected.allowsDeepMode === true;
+      const effectiveConstraints = deepActive
+        ? `${DEEP_MODE_DIRECTIVE}\n\n${constraints.trim()}`.slice(0, 1600)
+        : constraints.trim();
       const account = await ensureWalletReady();
       setTx({ phase: "quote", status: "Checking Somnia agent fee plus 0.1 STT protocol fee" });
       if (!deposit) throw new Error("Unable to quote the transaction. Try again in a moment.");
@@ -378,7 +438,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           keccak256(toHex(capability)),
           selected.id,
           goal.trim(),
-          constraints.trim(),
+          effectiveConstraints,
           urls,
           mode
         ]
@@ -392,27 +452,61 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
 
       setTx({ phase: "signature", status: "Estimating gas and opening your wallet for one transaction" });
       const gasEstimate = await publicClient.estimateGas(transaction);
+      const gas = bufferedGas(gasEstimate);
+      const pricing = await estimateGasFees();
+      const totalGasCost = gas * gasCeiling(pricing);
+      if (wallet.balance && parseEther(wallet.balance) < deposit + totalGasCost) {
+        throw new Error(`Insufficient STT. This request needs ~${formatEther(deposit + totalGasCost)} STT (fee + gas).`);
+      }
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
-      const hash = await client.sendTransaction({ ...transaction, gas: bufferedGas(gasEstimate) });
+      const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
+
+      const runContext = {
+        account,
+        selected,
+        task: goal.trim(),
+        constraints: effectiveConstraints,
+        urls,
+        missionId,
+        outputFormat,
+        memory
+      };
+      const pendingShell: AgentRunRecord = {
+        requestId: `pending-${hash.slice(2, 10)}`,
+        user: account,
+        appAgentId: selected.id,
+        task: goal.trim(),
+        constraints: effectiveConstraints,
+        url: urls[0] ?? "",
+        somniaAgentId: "",
+        mode: mode === 1 ? "Website" : "LLM",
+        status: "Pending",
+        result: "",
+        source: "Somnia",
+        createdAt: new Date().toISOString(),
+        completedAt: "",
+        txHash: hash,
+        missionId,
+        outputFormat,
+        memorySnapshot: memorySnapshot(memory)
+      };
+      saveRun(pendingShell);
 
       setTx({ phase: "receipt", status: "Workflow submitted. Waiting for Somnia receipt.", hash });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+      let receipt;
+      try {
+        receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+      } catch {
+        const onchainTx = await publicClient.getTransaction({ hash }).catch(() => null);
+        if (!onchainTx || onchainTx.blockNumber === null) throw new PendingTxError(hash);
+        receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+      }
       if (receipt.status !== "success") throw new Error("Somnia transaction reverted.");
 
       const requestId = extractRequestId(receipt.logs);
       if (!requestId) throw new Error("Workflow submitted, but the OSAgentRunRequested event was not found in the receipt.");
 
       setTx({ phase: "callback", status: `OS workflow request #${requestId} is running. Waiting for Somnia validator callback.`, hash });
-      const runContext = {
-        account,
-        selected,
-        task: goal.trim(),
-        constraints: constraints.trim(),
-        urls,
-        missionId,
-        outputFormat,
-        memory
-      };
       const initial = enrichSomniaRun(await readRun(requestId, hash), runContext);
       setActiveRun(initial);
       saveRun(initial);
@@ -523,10 +617,19 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       } as const;
       setTx({ phase: "signature", status: "Estimating gas and opening your wallet for token deployment" });
       const gasEstimate = await publicClient.estimateGas(transaction);
+      const gas = bufferedGas(gasEstimate);
+      const pricing = await estimateGasFees();
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
-      const hash = await client.sendTransaction({ ...transaction, gas: bufferedGas(gasEstimate) });
+      const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
       setTx({ phase: "receipt", status: "Token deployment submitted. Waiting for receipt.", hash });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+      let receipt;
+      try {
+        receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+      } catch {
+        const onchainTx = await publicClient.getTransaction({ hash }).catch(() => null);
+        if (!onchainTx || onchainTx.blockNumber === null) throw new PendingTxError(hash);
+        receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
+      }
       if (receipt.status !== "success") throw new Error("Token deployment reverted.");
       const artifact = extractTokenCreated(receipt.logs);
       if (!artifact) throw new Error("Token deployed, but TokenCreated event was not found.");
@@ -627,6 +730,15 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
               {outputFormats.map((format) => <option key={format.id} value={format.id}>{format.label} - {format.description}</option>)}
             </select>
           </label>
+          {selected.allowsDeepMode ? (
+            <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <input type="checkbox" checked={deepMode} onChange={(event) => setDeepMode(event.target.checked)} className="mt-1 h-4 w-4 accent-signal" />
+              <span className="flex-1">
+                <span className="block font-mono text-xs uppercase tracking-[0.2em] text-signal">Deep research mode</span>
+                <span className="mt-1 block text-xs leading-5 text-white/55">Takes longer. Returns a 6-section structured brief: summary, evidence with sources, conflicting views, confidence per claim, open questions, and next agents. Uses up to 6 reference URLs instead of 3.</span>
+              </span>
+            </label>
+          ) : null}
           {isTokenMission ? (
             <TokenLaunchPanel
               form={tokenForm}
@@ -692,6 +804,11 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           {tx.hash ? <a href={`${somnia.blockExplorers.default.url}/tx/${tx.hash}`} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 break-all font-mono text-xs text-cobalt"><ExternalLink className="h-3 w-3" />{tx.hash}</a> : null}
           {tx.error ? <ErrorCallout message={tx.error} action={tx.action} /> : null}
           {activeRun ? <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 font-mono text-xs text-white/50">request #{activeRun.requestId} - {activeRun.status}</p> : null}
+          {(pendingRuns.length || (activeRun && activeRun.status === "Pending")) ? (
+            <button onClick={retryCallback} className="mt-3 inline-flex items-center gap-2 rounded-xl border border-signal/40 bg-signal/10 px-4 py-2 text-xs font-semibold text-signal hover:bg-signal/20">
+              <RadioTower className="h-3 w-3" /> Re-check Somnia callback (no re-payment)
+            </button>
+          ) : null}
           {pendingRuns.length ? <p className="mt-3 rounded-2xl border border-ember/25 bg-ember/10 p-3 text-xs leading-5 text-ember">{pendingRuns.length} request{pendingRuns.length === 1 ? "" : "s"} still running. Refresh later; pending requests are recovered from local storage and onchain reads.</p> : null}
         </div>
       </aside>
@@ -996,6 +1113,9 @@ function recommendedAction(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   if (message.includes("no injected wallet") || message.includes("ethereum")) return "Install or unlock MetaMask, Rabby, Brave Wallet, or Coinbase Wallet, then connect again.";
   if (message.includes("rejected") || message.includes("denied") || message.includes("user rejected")) return "Nothing was submitted. Click the button again and approve the wallet prompt.";
+  if (message.includes("stuck in mempool")) return "Open your wallet's pending tab, tap Speed Up on the pending tx. The app will recover the request automatically — do NOT resubmit.";
+  if (message.includes("underpriced") || message.includes("intrinsic gas") || message.includes("gas required")) return "Accept the suggested gas in your wallet. Lowering gas is what causes this — do not change the prefilled values.";
+  if (message.includes("nonce too low")) return "A previous tx is still pending. Speed Up or Cancel it in your wallet, then retry.";
   if (message.includes("insufficient") || message.includes("underfunded") || message.includes("funds")) return "Add STT on Somnia Shannon for the agent fee plus gas, refresh your balance, then retry.";
   if (message.includes("gas") || message.includes("estimate")) return "Switch away from Somnia and back in your wallet, then retry. The app will re-check the network before opening the wallet.";
   if (message.includes("chain") || message.includes("network")) return "Approve the Somnia Shannon network switch in your wallet. If blocked, switch networks manually and retry.";
@@ -1148,4 +1268,53 @@ async function waitForRun(requestId: string, txHash?: Hash) {
 
 function bufferedGas(gas: bigint) {
   return gas + gas / 5n + 25_000n;
+}
+
+const SOMNIA_GAS_FLOOR = {
+  maxPriorityFeePerGas: 1_000_000_000n,
+  maxFeePerGas: 6_000_000_000n,
+  legacyGasPrice: 6_000_000_000n
+} as const;
+
+type GasPricing =
+  | { type: "eip1559"; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
+  | { type: "legacy"; gasPrice: bigint };
+
+async function estimateGasFees(): Promise<GasPricing> {
+  try {
+    const fees = await publicClient.estimateFeesPerGas();
+    if (fees.maxFeePerGas && fees.maxPriorityFeePerGas) {
+      const priority = max(fees.maxPriorityFeePerGas + fees.maxPriorityFeePerGas / 2n, SOMNIA_GAS_FLOOR.maxPriorityFeePerGas);
+      const cap = max(fees.maxFeePerGas * 2n, SOMNIA_GAS_FLOOR.maxFeePerGas);
+      return { type: "eip1559", maxFeePerGas: max(cap, priority), maxPriorityFeePerGas: priority };
+    }
+  } catch {
+    // Fall through to legacy gas price.
+  }
+  try {
+    const gasPrice = await publicClient.getGasPrice();
+    return { type: "legacy", gasPrice: max(gasPrice * 2n, SOMNIA_GAS_FLOOR.legacyGasPrice) };
+  } catch {
+    return { type: "legacy", gasPrice: SOMNIA_GAS_FLOOR.legacyGasPrice };
+  }
+}
+
+function gasCeiling(pricing: GasPricing) {
+  return pricing.type === "eip1559" ? pricing.maxFeePerGas : pricing.gasPrice;
+}
+
+function pricingArgs(pricing: GasPricing) {
+  return pricing.type === "eip1559"
+    ? { maxFeePerGas: pricing.maxFeePerGas, maxPriorityFeePerGas: pricing.maxPriorityFeePerGas }
+    : { gasPrice: pricing.gasPrice };
+}
+
+function max(a: bigint, b: bigint) {
+  return a > b ? a : b;
+}
+
+class PendingTxError extends Error {
+  constructor(public readonly hash: Hash) {
+    super("stuck in mempool");
+  }
 }

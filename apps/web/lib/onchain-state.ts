@@ -166,6 +166,10 @@ export function summarizeError(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error);
   const message = raw.toLowerCase();
   if (message.includes("user rejected") || message.includes("rejected") || message.includes("denied")) return "You rejected the wallet request. No STT was spent. Click Run agent again when you are ready to sign.";
+  if (message.includes("stuck in mempool")) return "Transaction stuck because gas was too low. Open your wallet, find the pending tx, and tap Speed Up. The request will resume automatically — do not re-sign or you will be charged the protocol fee again.";
+  if (message.includes("replacement transaction underpriced") || message.includes("transaction underpriced")) return "Gas price was too low. Use the suggested gas in your wallet (or raise it) and retry.";
+  if (message.includes("intrinsic gas too low") || message.includes("gas required exceeds")) return "Gas limit was too low. Use the suggested gas — do not lower it in your wallet.";
+  if (message.includes("nonce too low")) return "You have a pending transaction in your wallet. Open it, Speed Up or Cancel, then retry.";
   if (message.includes("insufficient funds")) return "Insufficient STT. Fund your Somnia Shannon wallet, then retry the agent request.";
   if (message.includes("underfunded")) return "The Somnia Agent deposit was underfunded. Refresh the page to get a fresh quote, then retry.";
   if (message.includes("transaction reverted") || message.includes("execution reverted")) return "The onchain transaction reverted. Check your STT balance, refresh the deposit quote, and retry.";
