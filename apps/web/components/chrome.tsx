@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Cpu } from "lucide-react";
 import { WalletButton } from "./wallet-button";
+import { BellButton } from "./notification-center";
 
 const navItems = [
   ["Agents", "/app/agents"],
@@ -40,7 +41,8 @@ function TopBar() {
             </Link>
           ))}
         </nav>
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
+          <BellButton />
           <WalletButton />
         </div>
       </div>

@@ -26,7 +26,8 @@ import {
   type OutputFormat
 } from "../lib/agent-engine";
 import { clearRunHistory, loadRunHistory, removeRunHistory, upsertMissionReceipt, upsertRunHistory } from "../lib/history-store";
-import { bufferedGas, estimateGasFees, gasCeiling, PendingTxError, pricingArgs } from "../lib/somnia-gas";
+import { bufferedGas, detectWalletKind, estimateGasFees, gasCeiling, PendingTxError, pickPricingForWallet, pricingArgs, type WalletKind } from "../lib/somnia-gas";
+import { useNotifications } from "./notification-center";
 import { summarizeError } from "../lib/onchain-state";
 
 const DEEP_MODE_DIRECTIVE = "DEEP MODE: First privately outline sub-questions, then research each. Return six sections: (1) Executive summary, (2) Evidence with source URLs, (3) Conflicting views or unknowns, (4) Confidence per claim (low/med/high), (5) Open questions, (6) Recommended next agents. Cite every non-trivial claim inline. Aim for 800-1500 words.";
@@ -127,13 +128,49 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   const [activeRun, setActiveRun] = useState<AgentRunRecord | null>(null);
   const [resultModal, setResultModal] = useState<AgentRunRecord | null>(null);
   const shownResultIds = useRef<Set<string>>(new Set());
+  const recoveringIds = useRef<Set<string>>(new Set());
+  const notify = useNotifications();
   const [waitProgress, setWaitProgress] = useState<{ elapsedMs: number; nextCheckMs: number } | null>(null);
+  const [walletKind, setWalletKind] = useState<WalletKind>("unknown");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [estGasCost, setEstGasCost] = useState<bigint | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") setWalletKind(detectWalletKind(window.ethereum));
+  }, [wallet.address]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function quoteGas() {
+      try {
+        const pricing = pickPricingForWallet(await estimateGasFees(publicClient), detectWalletKind(typeof window !== "undefined" ? window.ethereum : undefined));
+        // Use a generous fixed gas-units estimate for the breakdown display (real estimate happens at send time).
+        const gasUnits = 1_200_000n;
+        if (!cancelled) setEstGasCost(gasUnits * gasCeiling(pricing));
+      } catch {
+        if (!cancelled) setEstGasCost(null);
+      }
+    }
+    void quoteGas();
+    return () => { cancelled = true; };
+  }, [wallet.address, walletKind]);
 
   function presentResultModal(run: AgentRunRecord) {
     if (shownResultIds.current.has(run.requestId)) return;
     shownResultIds.current.add(run.requestId);
     setResultModal(run);
   }
+
+  useEffect(() => {
+    return notify.onViewResult((requestId) => {
+      const run = loadRunHistory().find((item) => item.requestId === requestId);
+      if (run && run.status === "Success") {
+        // Force-open even if previously shown.
+        setResultModal(run);
+      }
+    });
+  }, [notify]);
 
   function resetPending() {
     if (typeof window !== "undefined" && !window.confirm("Clear stale pending requests? Completed history is preserved.")) return;
@@ -333,6 +370,13 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     async function recoverPendingRuns() {
       const orphans: string[] = [];
       const recovered = await Promise.all(pendingRuns.map(async (run) => {
+        // Skip if executeAgentWorkflow is currently driving this exact tx.
+        if (run.txHash && tx.hash === run.txHash && (tx.phase === "receipt" || tx.phase === "callback" || tx.phase === "signature")) {
+          return run;
+        }
+        // Skip if another recovery iteration is already processing this id.
+        if (recoveringIds.current.has(run.requestId)) return run;
+        recoveringIds.current.add(run.requestId);
         try {
           let requestId = run.requestId;
           if (requestId.startsWith("pending-") && run.txHash) {
@@ -360,6 +404,8 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           return { ...merged, confidence: scoreAgentRun(merged) };
         } catch {
           return run;
+        } finally {
+          recoveringIds.current.delete(run.requestId);
         }
       }));
       if (cancelled) return;
@@ -370,8 +416,20 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       if (nextRuns) setLocalRuns(nextRuns);
       for (const run of recovered) {
         if (run.status !== "Pending") {
+          const wasShown = shownResultIds.current.has(run.requestId);
           saveRun(run);
-          if (run.status === "Success") presentResultModal(run);
+          if (run.status === "Success") {
+            presentResultModal(run);
+            if (!wasShown) {
+              notify.push({
+                kind: "result",
+                title: `${readableAgentLabel(run.appAgentId)} result is in`,
+                body: run.result?.slice(0, 200),
+                link: run.txHash ? { href: `${somnia.blockExplorers.default.url}/tx/${run.txHash}`, label: "view tx" } : undefined,
+                resultRequestId: run.requestId
+              });
+            }
+          }
         }
       }
       await reload();
@@ -485,6 +543,14 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       if (enriched.status === "Success") {
         setTx({ phase: "success", status: "Recovered. The Somnia Agent result is below and saved to History.", hash: hash as Hash });
         presentResultModal(enriched);
+        notify.push({
+          kind: "result",
+          title: `Recovered: ${selected.name} result`,
+          body: enriched.result?.slice(0, 200),
+          link: { href: `${somnia.blockExplorers.default.url}/tx/${hash}`, label: "view tx" },
+          resultRequestId: enriched.requestId
+        });
+        setActiveRun(null);
       } else if (enriched.status === "Pending") {
         setTx({ phase: "callback", status: "Recovered. Still anchoring on Somnia — the Re-check button will resolve it.", hash: hash as Hash });
       } else {
@@ -528,6 +594,14 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       if (merged.status === "Success") {
         setTx({ phase: "success", status: "Callback recovered. Result is visible below and saved to History.", hash: target.txHash as Hash });
         presentResultModal(merged);
+        notify.push({
+          kind: "result",
+          title: `${selected.name} result is in`,
+          body: merged.result?.slice(0, 200),
+          link: target.txHash ? { href: `${somnia.blockExplorers.default.url}/tx/${target.txHash}`, label: "view tx" } : undefined,
+          resultRequestId: merged.requestId
+        });
+        setActiveRun(null);
       } else if (merged.status === "Pending") {
         setTx({ phase: "callback", status: "Somnia callback has not arrived yet. Try again in a moment — no re-payment needed.", hash: target.txHash as Hash });
       } else {
@@ -584,7 +658,8 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       setTx({ phase: "signature", status: "Estimating gas and opening your wallet for one transaction" });
       const gasEstimate = await publicClient.estimateGas(transaction);
       const gas = bufferedGas(gasEstimate);
-      const pricing = await estimateGasFees(publicClient);
+      const rawPricing = await estimateGasFees(publicClient);
+      const pricing = pickPricingForWallet(rawPricing, detectWalletKind(window.ethereum));
       const totalGasCost = gas * gasCeiling(pricing);
       if (wallet.balance && parseEther(wallet.balance) < deposit + totalGasCost) {
         throw new Error(`Insufficient STT. This request needs ~${formatEther(deposit + totalGasCost)} STT (fee + gas).`);
@@ -624,8 +699,22 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       saveRun(pendingShell);
 
       setTx({ phase: "receipt", status: "Workflow submitted. Waiting for Somnia receipt.", hash });
+      notify.push({
+        kind: "tx",
+        title: `${selected.name} request submitted`,
+        body: "Anchoring on Somnia validators. You'll be notified the moment it lands.",
+        link: { href: `${somnia.blockExplorers.default.url}/tx/${hash}`, label: "view tx" },
+        silent: true
+      });
       const receipt = await waitForReceiptWithRetry(publicClient, hash);
       if (receipt.status !== "success") throw new Error("Somnia transaction reverted.");
+      if (receipt.effectiveGasPrice && receipt.effectiveGasPrice < 2_000_000_000n) {
+        notify.push({
+          kind: "info",
+          title: "Heads up — gas was lower than recommended",
+          body: `Your wallet submitted at ${(Number(receipt.effectiveGasPrice) / 1e9).toFixed(2)} gwei. The tx still mined, but if validators take longer than usual, that's why.`
+        });
+      }
 
       const requestId = extractRequestId(receipt.logs);
       if (!requestId) throw new Error("Workflow submitted, but the OSAgentRunRequested event was not found in the receipt.");
@@ -666,13 +755,31 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           setTx({ phase: "success", status: "Confirmed. The real Somnia Agent callback is visible below and saved to History.", hash });
           setResultModal(callbackRun);
           shownResultIds.current.add(callbackRun.requestId);
+          notify.push({
+            kind: "result",
+            title: `${deepActive ? "[Deep] " : ""}${selected.name} returned a result`,
+            body: callbackRun.result?.slice(0, 200),
+            link: hash ? { href: `${somnia.blockExplorers.default.url}/tx/${hash}`, label: "view tx" } : undefined,
+            resultRequestId: callbackRun.requestId
+          });
+          setActiveRun(null);
         } else {
           setTx({ phase: "failed", status: callbackRun.status, hash, error: callbackRun.result || "Somnia Agent did not return a usable result.", action: "The signed request remains visible in History. Retry only if the callback failed or timed out." });
+          notify.push({
+            kind: "error",
+            title: `${selected.name} did not return a usable result`,
+            body: callbackRun.result || `Status: ${callbackRun.status}`,
+            link: hash ? { href: `${somnia.blockExplorers.default.url}/tx/${hash}`, label: "view tx" } : undefined
+          });
+          setActiveRun(null);
         }
       }
     } catch (error) {
       setWaitProgress(null);
-      setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
+      const message = summarizeError(error);
+      setTx({ phase: "failed", status: "Needs attention", error: message, action: recommendedAction(error) });
+      notify.push({ kind: "error", title: "Agent run failed", body: message });
+      setActiveRun(null);
     }
   }
 
@@ -765,7 +872,8 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       setTx({ phase: "signature", status: "Estimating gas and opening your wallet for token deployment" });
       const gasEstimate = await publicClient.estimateGas(transaction);
       const gas = bufferedGas(gasEstimate);
-      const pricing = await estimateGasFees(publicClient);
+      const rawPricing = await estimateGasFees(publicClient);
+      const pricing = pickPricingForWallet(rawPricing, detectWalletKind(window.ethereum));
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
       const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
       setTx({ phase: "receipt", status: "Token deployment submitted. Waiting for receipt.", hash });
@@ -843,12 +951,39 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           </label> : null}
           <label className="block">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Specialist</span>
+            {!missionMode ? (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {["All", ...categories, "Research"].map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      setCategoryFilter(cat);
+                      if (cat === "Research") {
+                        const firstResearch = selectableAgents.find((agent) => agent.allowsDeepMode);
+                        if (firstResearch) {
+                          applyAgent(firstResearch);
+                          setDeepMode(true);
+                        }
+                      }
+                    }}
+                    className={`rounded-lg border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] transition ${categoryFilter === cat ? "border-signal/50 bg-signal/15 text-signal" : "border-white/10 bg-white/[0.03] text-white/55 hover:border-signal/30 hover:text-white"}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <select value={agentId} onChange={(event) => applyAgent(selectableAgents.find((agent) => agent.id === event.target.value) ?? selectableAgents[0])} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
-              {categories.map((category) => (
-                <optgroup key={category} label={category}>
-                  {selectableAgents.filter((agent) => agent.category === category).map((agent) => <option key={agent.id} value={agent.id}>{agent.role} - {agent.name}</option>)}
-                </optgroup>
-              ))}
+              {categories.map((category) => {
+                if (categoryFilter !== "All" && categoryFilter !== "Research" && categoryFilter !== category) return null;
+                const agentsInCategory = selectableAgents.filter((agent) => agent.category === category && (categoryFilter !== "Research" || agent.allowsDeepMode));
+                if (!agentsInCategory.length) return null;
+                return (
+                  <optgroup key={category} label={category}>
+                    {agentsInCategory.map((agent) => <option key={agent.id} value={agent.id}>{agent.role} — {agent.name}{agent.allowsDeepMode ? " · Deep" : ""}</option>)}
+                  </optgroup>
+                );
+              })}
             </select>
           </label>
           <label className="block">
@@ -892,10 +1027,16 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           ) : null}
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">One transaction total</span>
-              <span className="font-mono text-sm text-signal">{deposit ? `${Number(formatEther(deposit)).toFixed(4)} STT` : "Quoting..."}</span>
+              <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Fee breakdown</span>
+              <span className="font-mono text-sm text-signal">
+                {deposit ? `${Number(formatEther(deposit + (estGasCost ?? 0n))).toFixed(4)} STT` : <span className="inline-block h-3 w-16 animate-pulse rounded bg-white/10" />}
+              </span>
             </div>
-            <p className="mt-2 text-xs leading-5 text-white/45">{mode === 1 ? "Mode: Website parser" : "Mode: LLM inference"} plus 0.1 STT protocol fee.</p>
+            <div className="mt-2 grid gap-1 font-mono text-[11px] leading-5 text-white/55">
+              <div className="flex justify-between"><span>Deposit + protocol fee</span><span>{deposit ? `${Number(formatEther(deposit)).toFixed(4)} STT` : "…"}</span></div>
+              <div className="flex justify-between"><span>Est. gas (max)</span><span>{estGasCost ? `~${Number(formatEther(estGasCost)).toFixed(5)} STT` : "—"}</span></div>
+            </div>
+            <p className="mt-2 text-[11px] leading-4 text-white/40">{mode === 1 ? "Website parser" : "LLM inference"} · 0.1 STT protocol fee included in deposit.</p>
             {quoteError ? <p className="mt-2 text-xs leading-5 text-ember">{quoteError}</p> : null}
           </div>
           {wallet.address && wallet.chainId && wallet.chainId !== somnia.id ? (
@@ -905,13 +1046,23 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
               <button onClick={() => void switchToSomnia()} className="mt-2 inline-flex items-center gap-2 rounded-xl border border-danger/50 px-3 py-1.5 font-semibold text-danger hover:bg-danger/15">Switch to Somnia Shannon</button>
             </div>
           ) : null}
-          <div className="rounded-2xl border border-ember/40 bg-ember/10 p-4 text-xs leading-5 text-ember">
-            <span className="font-mono uppercase tracking-[0.2em]">Heads up</span>
-            <p className="mt-2 text-white/75">Your wallet will open. <strong className="text-ember">Keep the suggested gas as‑is — do NOT lower it in Advanced.</strong> Lowering gas stalls the Somnia request. You would still pay the 0.1 STT protocol fee and have to use your wallet&apos;s Speed Up button to recover the request.</p>
-          </div>
+          {walletKind === "rabby" || walletKind === "unknown" ? (
+            <div className="rounded-2xl border border-danger/45 bg-danger/10 p-4 text-xs leading-5 text-danger">
+              <span className="font-mono uppercase tracking-[0.2em]">{walletKind === "rabby" ? "Rabby detected" : "Unknown wallet"}</span>
+              <p className="mt-2 text-white/80">
+                On Somnia Shannon, {walletKind === "rabby" ? "Rabby" : "this wallet"} sometimes overrides our suggested gas with a sub‑gwei "Normal" preset and the tx stalls.
+                We&apos;re submitting a <strong className="text-danger">legacy gas price</strong> so the wallet can&apos;t silently downgrade it. <strong className="text-danger">Do NOT lower gas in Advanced.</strong> If you do, you still pay the 0.1 STT fee and have to Speed Up.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-ember/40 bg-ember/10 p-4 text-xs leading-5 text-ember">
+              <span className="font-mono uppercase tracking-[0.2em]">Heads up</span>
+              <p className="mt-2 text-white/75">Your wallet will open. <strong className="text-ember">Keep the suggested gas as‑is — do NOT lower it in Advanced.</strong> Lowering gas stalls the Somnia request. You would still pay the 0.1 STT protocol fee and have to use your wallet&apos;s Speed Up button to recover the request.</p>
+            </div>
+          )}
           <button onClick={runAgent} disabled={isRunning} className="inline-flex items-center justify-center gap-2 rounded-xl bg-signal px-5 py-3 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60">
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RadioTower className="h-4 w-4" />}
-            {missionMode ? "Run mission agent" : "Run agent"}
+            {runButtonCopy(tx.phase, missionMode)}
           </button>
         </div>
       </section>
@@ -957,7 +1108,14 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           {waitProgress ? <AnchorCountdown elapsedMs={waitProgress.elapsedMs} nextCheckMs={waitProgress.nextCheckMs} totalMs={8 * 60_000} /> : null}
           {tx.hash ? <a href={`${somnia.blockExplorers.default.url}/tx/${tx.hash}`} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 break-all font-mono text-xs text-cobalt"><ExternalLink className="h-3 w-3" />{tx.hash}</a> : null}
           {tx.error ? <ErrorCallout message={tx.error} action={tx.action} /> : null}
-          {activeRun ? <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 font-mono text-xs text-white/50">request #{activeRun.requestId} - {activeRun.status}</p> : null}
+          {activeRun ? (
+            <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 font-mono text-xs text-white/50">
+              <div>request #{activeRun.requestId} — {activeRun.status}</div>
+              {isDeepRun(activeRun) || (deepMode && selected.allowsDeepMode && (tx.phase === "callback" || tx.phase === "receipt")) ? (
+                <div className="mt-2"><DeepBadge /></div>
+              ) : null}
+            </div>
+          ) : null}
           {(pendingRuns.length || (activeRun && activeRun.status === "Pending")) ? (
             <button onClick={retryCallback} className="mt-3 inline-flex items-center gap-2 rounded-xl border border-signal/40 bg-signal/10 px-4 py-2 text-xs font-semibold text-signal hover:bg-signal/20">
               <RadioTower className="h-3 w-3" /> Re-check Somnia callback (no re-payment)
@@ -966,16 +1124,23 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           {pendingRuns.length ? <p className="mt-3 rounded-2xl border border-ember/25 bg-ember/10 p-3 text-xs leading-5 text-ember">{pendingRuns.length} request{pendingRuns.length === 1 ? "" : "s"} still running. Refresh later; pending requests are recovered from local storage and onchain reads.</p> : null}
           <div className="mt-4 flex flex-wrap gap-2 border-t border-white/5 pt-3">
             <button onClick={importByTxHash} className="rounded-xl border border-signal/40 bg-signal/10 px-3 py-1.5 text-xs font-semibold text-signal hover:bg-signal/20" title="Paste a tx hash and recover the agent result from Somnia">Recover by tx hash</button>
-            <button onClick={exportHistory} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-signal/40 hover:text-signal" title="Download local agent history as JSON">Export history</button>
-            <label className="cursor-pointer rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-signal/40 hover:text-signal">
-              Import history
-              <input type="file" accept="application/json" onChange={importHistory} className="hidden" />
-            </label>
-            {pendingRuns.length ? (
-              <button onClick={resetPending} className="rounded-xl border border-ember/30 px-3 py-1.5 text-xs text-ember hover:bg-ember/10" title="Drop stale pending requests but keep completed history">Clear pending</button>
-            ) : null}
-            <button onClick={resetEverything} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:border-red-500/50 hover:text-red-300" title="Wipe all local agent runs">Reset all</button>
+            <button onClick={() => setMoreOpen((value) => !value)} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/55 hover:border-signal/40 hover:text-signal">
+              {moreOpen ? "Less" : "More"}
+            </button>
           </div>
+          {moreOpen ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button onClick={exportHistory} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-signal/40 hover:text-signal" title="Download local agent history as JSON">Export history</button>
+              <label className="cursor-pointer rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-signal/40 hover:text-signal">
+                Import history
+                <input type="file" accept="application/json" onChange={importHistory} className="hidden" />
+              </label>
+              {pendingRuns.length ? (
+                <button onClick={resetPending} className="rounded-xl border border-ember/30 px-3 py-1.5 text-xs text-ember hover:bg-ember/10" title="Drop stale pending requests but keep completed history">Clear pending</button>
+              ) : null}
+              <button onClick={resetEverything} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:border-red-500/50 hover:text-red-300" title="Wipe all local agent runs">Reset all</button>
+            </div>
+          ) : null}
         </div>
       </aside>
 
@@ -1082,24 +1247,27 @@ function LatestResult({ run, onNextAction }: { run: AgentRunRecord; onNextAction
   );
 }
 
-function AnchoredResults({ results, onNextAction }: { results: AgentRunRecord[]; onNextAction: (action: AgentNextAction) => void }) {
+function AnchoredResults({ results, onNextAction, connected }: { results: AgentRunRecord[]; onNextAction: (action: AgentNextAction) => void; connected: boolean }) {
   return (
     <section className="xl:col-span-2 panel rounded-[1.5rem] p-5 sm:p-6">
       <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Anchored results</p>
       <h3 className="mt-3 text-3xl font-semibold text-white">Confirmed Somnia results</h3>
       <div className="mt-4 grid gap-3">
         {results.slice(0, 8).map((item) => (
-          <article key={item.requestId} className="rounded-2xl border border-white/10 bg-[#101010] p-4">
+          <article key={item.requestId} className={`rounded-2xl border border-white/10 bg-[#101010] p-4 border-l-4 ${categoryStripe(item.appAgentId)}`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h4 className="font-semibold text-white">{readableAgentLabel(item.appAgentId)}</h4>
+              <h4 className="flex items-center gap-2 font-semibold text-white">
+                {readableAgentLabel(item.appAgentId)}
+                {isDeepRun(item) ? <DeepBadge /> : null}
+              </h4>
               <span className="font-mono text-xs text-signal">request #{item.requestId}</span>
             </div>
             {item.task ? <p className="mt-2 text-sm text-white/45">{item.task}</p> : null}
             <ResultStudio run={item} compact />
             <div className="mt-4 flex flex-wrap gap-3 font-mono text-xs text-white/38">
-          <span>{item.mode}</span>
-          {item.source ? <span>{item.source}</span> : null}
-          {item.txHash ? <a className="text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${item.txHash}`} target="_blank" rel="noreferrer">tx</a> : null}
+              <span>{item.mode}</span>
+              {item.source ? <span>{item.source}</span> : null}
+              {item.txHash ? <a className="text-cobalt" href={`${somnia.blockExplorers.default.url}/tx/${item.txHash}`} target="_blank" rel="noreferrer">tx</a> : null}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {(item.nextActions ?? buildNextActions(item.appAgentId, item.task, item.outputFormat ?? "auto")).slice(0, 2).map((action) => (
@@ -1108,10 +1276,28 @@ function AnchoredResults({ results, onNextAction }: { results: AgentRunRecord[];
             </div>
           </article>
         ))}
-        {!results.length ? <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.02] p-6 text-sm text-white/48">No completed Somnia Agent results yet. Run an agent and wait for the callback.</div> : null}
+        {!results.length ? (
+          <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.02] p-6 text-sm text-white/55">
+            {connected
+              ? "No completed Somnia Agent results yet. Run an agent above and the result will appear here automatically."
+              : "Connect a wallet and run an agent to see results here. Past runs from other wallets are hidden for privacy."}
+          </div>
+        ) : null}
       </div>
     </section>
   );
+}
+
+function categoryStripe(agentId: string) {
+  // Lookup category from the agent registry to color the left edge.
+  const agent = curatedAgents.find((item) => item.id === agentId);
+  switch (agent?.category) {
+    case "Crypto": return "border-l-signal/70";
+    case "Work": return "border-l-cobalt/60";
+    case "Life": return "border-l-ember/60";
+    case "Builder": return "border-l-purple-500/60";
+    default: return "border-l-white/15";
+  }
 }
 
 function ResultStudio({ run, compact = false }: { run: AgentRunRecord; compact?: boolean }) {
@@ -1229,6 +1415,30 @@ function StatusTimeline({ phase }: { phase: RunPhase }) {
   );
 }
 
+function runButtonCopy(phase: RunPhase, missionMode: boolean) {
+  if (phase === "wallet" || phase === "quote") return "Preparing…";
+  if (phase === "network") return "Switching network…";
+  if (phase === "signature") return "Opening wallet…";
+  if (phase === "receipt") return "Waiting for receipt…";
+  if (phase === "callback") return "Anchoring on Somnia…";
+  if (phase === "success") return "Result ready";
+  if (phase === "failed") return missionMode ? "Retry mission agent" : "Retry agent";
+  return missionMode ? "Run mission agent" : "Run agent";
+}
+
+function DeepBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-signal/40 bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-signal">
+      Deep mode · 6-section brief
+    </span>
+  );
+}
+
+function isDeepRun(run: AgentRunRecord | null | undefined): boolean {
+  if (!run) return false;
+  return typeof run.constraints === "string" && run.constraints.startsWith("DEEP MODE: First privately outline");
+}
+
 function AnchorCountdown({ elapsedMs, nextCheckMs, totalMs }: { elapsedMs: number; nextCheckMs: number; totalMs: number }) {
   const [nowOffset, setNowOffset] = useState(0);
   useEffect(() => {
@@ -1238,19 +1448,34 @@ function AnchorCountdown({ elapsedMs, nextCheckMs, totalMs }: { elapsedMs: numbe
     return () => window.clearInterval(id);
   }, [elapsedMs, nextCheckMs]);
   const liveElapsed = elapsedMs + nowOffset;
-  const remaining = Math.max(0, totalMs - liveElapsed);
   const nextIn = Math.max(0, Math.round((nextCheckMs - nowOffset) / 1000));
+
+  // First-minute view: friendly, no scary countdown — validators usually answer in 1–3 s.
+  if (liveElapsed < 60_000) {
+    return (
+      <div className="mt-3 rounded-2xl border border-signal/25 bg-signal/5 p-3 font-mono text-xs text-signal">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span>Validators normally answer in 1–3 s.</span>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-white/45">{liveElapsed < 6000 ? "Reading on-chain…" : `Re-checking in ${nextIn}s.`}</p>
+      </div>
+    );
+  }
+
+  // After 60s: show the longer-wait countdown so the user knows it's not stuck.
+  const remaining = Math.max(0, totalMs - liveElapsed);
   const pct = Math.min(100, Math.round((liveElapsed / totalMs) * 100));
   return (
-    <div className="mt-3 rounded-2xl border border-signal/25 bg-signal/5 p-3 font-mono text-xs text-signal">
+    <div className="mt-3 rounded-2xl border border-ember/30 bg-ember/5 p-3 font-mono text-xs text-ember">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span>Anchoring on Somnia — next check in {nextIn}s</span>
-        <span className="text-white/55">elapsed {formatMinSec(liveElapsed)} of {formatMinSec(totalMs)}</span>
+        <span>Taking longer than usual — next check in {nextIn}s</span>
+        <span className="text-white/55">elapsed {formatMinSec(liveElapsed)}</span>
       </div>
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-        <div className="h-full bg-signal/70" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-ember/70" style={{ width: `${pct}%` }} />
       </div>
-      <p className="mt-2 text-[11px] leading-4 text-white/45">Time remaining: {formatMinSec(remaining)}. We keep retrying the on-chain read; the result will appear here automatically when validators answer.</p>
+      <p className="mt-2 text-[11px] leading-4 text-white/45">We keep retrying for {formatMinSec(remaining)} more. The Re-check button below pulls the result the moment it lands; you do not need to re-pay.</p>
     </div>
   );
 }
@@ -1332,6 +1557,7 @@ function ResultModal({ run, onClose }: { run: AgentRunRecord; onClose: () => voi
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Agent result</p>
             <h2 className="mt-3 text-3xl font-semibold text-white">Request #{run.requestId} completed</h2>
+            {isDeepRun(run) ? <div className="mt-2"><DeepBadge /></div> : null}
           </div>
           <button onClick={onClose} className="rounded-full border border-white/10 p-2 text-white/60 hover:text-white"><X className="h-4 w-4" /></button>
         </div>
@@ -1339,8 +1565,23 @@ function ResultModal({ run, onClose }: { run: AgentRunRecord; onClose: () => voi
         <AgentProof run={run} />
         <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-white/45">
           <CheckCircle2 className="h-4 w-4 text-signal" />
-          <span>Visible in Anchored results with the signed transaction proof.</span>
+          <span>Source: Somnia validator. Visible in Anchored results with the signed transaction proof.</span>
         </div>
+        {run.txHash ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a href={`${somnia.blockExplorers.default.url}/tx/${run.txHash}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 hover:text-white">
+              <ExternalLink className="h-3 w-3" /> View on explorer
+            </a>
+            <button
+              onClick={() => {
+                if (typeof navigator !== "undefined") void navigator.clipboard?.writeText(`${somnia.blockExplorers.default.url}/tx/${run.txHash}`);
+              }}
+              className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 hover:text-white"
+            >
+              <Copy className="h-3 w-3" /> Copy explorer link
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>
   );
@@ -1524,7 +1765,8 @@ async function waitForRun(
       // Swallow read errors; we'll retry.
     }
     const elapsedMs = Date.now() - started;
-    const intervalMs = elapsedMs < 60_000 ? 3000 : 8000;
+    // Validator turnaround is usually 1-3 s. Poll aggressively up front, back off later.
+    const intervalMs = elapsedMs < 30_000 ? 3000 : elapsedMs < 90_000 ? 6000 : 12_000;
     onProgress?.({ elapsedMs, nextCheckMs: intervalMs, interim: lastInterim });
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

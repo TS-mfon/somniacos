@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Copy, ExternalLink, GitCompare, Loader2, P
 import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Address, type Hash } from "viem";
 import { buildAgentHandoffs, buildNextActions, defaultMemory, outputFormats, readableAgentLabel, regularWorkbenchAgents, scoreAgentRun, type AgentMemory, type AgentRunRecord, type CompareSession, type CuratedAgent, type OutputFormat } from "../lib/agent-engine";
 import { loadCompareSessions, upsertCompareSession, upsertRunHistory } from "../lib/history-store";
-import { bufferedGas, estimateGasFees, pricingArgs } from "../lib/somnia-gas";
+import { bufferedGas, detectWalletKind, estimateGasFees, pickPricingForWallet, pricingArgs } from "../lib/somnia-gas";
 import { osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi } from "../lib/contracts";
 import { summarizeError } from "../lib/onchain-state";
 import { useSomniaWallet } from "./wallet-button";
@@ -254,7 +254,8 @@ export function ComparePage() {
     setTxStatus(`Estimating gas and opening wallet for ${agent.role}.`);
     const gasEstimate = await publicClient.estimateGas(transaction);
     const gas = bufferedGas(gasEstimate);
-    const pricing = await estimateGasFees(publicClient);
+    const rawPricing = await estimateGasFees(publicClient);
+    const pricing = pickPricingForWallet(rawPricing, detectWalletKind(typeof window !== "undefined" ? window.ethereum : undefined));
     const client = createWalletClient({ chain: somnia, transport: walletClient() });
     const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
     setTxStatus(`${agent.role} transaction submitted. Waiting for Somnia receipt.`);

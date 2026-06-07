@@ -53,3 +53,35 @@ export class PendingTxError extends Error {
   }
 }
 
+export type WalletKind = "metamask" | "okx" | "rabby" | "unknown";
+
+type InjectedWallet = {
+  isMetaMask?: boolean;
+  isOkxWallet?: boolean;
+  isOKExWallet?: boolean;
+  isRabby?: boolean;
+};
+
+export function detectWalletKind(ethereum: unknown): WalletKind {
+  if (typeof ethereum !== "object" || ethereum === null) return "unknown";
+  const provider = ethereum as InjectedWallet;
+  // Rabby injects isMetaMask: true for compat, so check Rabby first.
+  if (provider.isRabby) return "rabby";
+  if (provider.isOkxWallet || provider.isOKExWallet) return "okx";
+  if (provider.isMetaMask) return "metamask";
+  return "unknown";
+}
+
+// On Somnia (a custom chain), Rabby ignores our EIP-1559 maxFeePerGas hint and shows its
+// own "Normal" preset that can land at 10 wei. Submitting as a legacy type-0 tx with
+// gasPrice forces the wallet to honor our number. MetaMask + OKX prefill our hint
+// correctly on custom chains and benefit from the EIP-1559 path.
+export function pickPricingForWallet(pricing: GasPricing, kind: WalletKind): GasPricing {
+  if (kind === "metamask" || kind === "okx") return pricing;
+  // Force legacy for Rabby / unknown.
+  if (pricing.type === "eip1559") {
+    return { type: "legacy", gasPrice: pricing.maxFeePerGas };
+  }
+  return pricing;
+}
+

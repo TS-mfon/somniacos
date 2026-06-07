@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPublicClient, custom, formatEther, http, type Address, type EIP1193Provider } from "viem";
-import { WalletCards, Zap } from "lucide-react";
+import { RefreshCw, WalletCards, Zap } from "lucide-react";
 import { somnia } from "../lib/contracts";
 
 declare global {
@@ -100,8 +100,9 @@ export function useSomniaWallet() {
 }
 
 export function WalletButton() {
-  const { wallet, connect, switchToSomnia } = useSomniaWallet();
+  const { wallet, connect, switchToSomnia, refresh } = useSomniaWallet();
   const wrongNetwork = wallet.chainId && wallet.chainId !== somnia.id;
+  const [refreshing, setRefreshing] = useState(false);
 
   if (!wallet.address) {
     return (
@@ -114,11 +115,16 @@ export function WalletButton() {
 
   if (wrongNetwork) {
     return (
-      <button onClick={switchToSomnia} className="inline-flex items-center gap-2 rounded-lg border border-ember/40 bg-ember/15 px-3 py-2 text-sm font-semibold text-ember">
+      <button onClick={switchToSomnia} className="inline-flex items-center gap-2 rounded-lg border border-danger/50 bg-danger/15 px-3 py-2 text-sm font-semibold text-danger">
         <Zap className="h-4 w-4" />
-        Switch to Somnia
+        Wrong network — switch to Somnia
       </button>
     );
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try { await refresh(wallet.address); } finally { setRefreshing(false); }
   }
 
   return (
@@ -126,6 +132,10 @@ export function WalletButton() {
       <span className="h-2 w-2 animate-pulse rounded-full bg-signal" />
       <span className="font-mono">{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}</span>
       <span className="hidden font-mono text-white/45 sm:inline">{Number(wallet.balance ?? 0).toFixed(3)} STT</span>
+      <span className="hidden rounded-md border border-signal/30 bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-signal sm:inline">Somnia</span>
+      <button onClick={handleRefresh} className="rounded-md p-1 text-white/45 hover:bg-white/5 hover:text-white" aria-label="Refresh balance">
+        <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+      </button>
     </div>
   );
 }
