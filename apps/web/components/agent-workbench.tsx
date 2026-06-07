@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, formatUnits, http, isAddress, keccak256, parseEther, parseUnits, toHex, type Address, type Hash } from "viem";
 import { AlertTriangle, Brain, CheckCircle2, Clock3, Copy, ExternalLink, GitBranch, Loader2, RadioTower, Sparkles, X } from "lucide-react";
 import { useOnchainActivity } from "./live-economy";
@@ -25,7 +25,7 @@ import {
   type CuratedAgent,
   type OutputFormat
 } from "../lib/agent-engine";
-import { loadRunHistory, upsertMissionReceipt, upsertRunHistory } from "../lib/history-store";
+import { clearRunHistory, loadRunHistory, removeRunHistory, upsertMissionReceipt, upsertRunHistory } from "../lib/history-store";
 import { summarizeError } from "../lib/onchain-state";
 
 const DEEP_MODE_DIRECTIVE = "DEEP MODE: First privately outline sub-questions, then research each. Return six sections: (1) Executive summary, (2) Evidence with source URLs, (3) Conflicting views or unknowns, (4) Confidence per claim (low/med/high), (5) Open questions, (6) Recommended next agents. Cite every non-trivial claim inline. Aim for 800-1500 words.";
@@ -125,6 +125,75 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   const [quoteError, setQuoteError] = useState("");
   const [activeRun, setActiveRun] = useState<AgentRunRecord | null>(null);
   const [resultModal, setResultModal] = useState<AgentRunRecord | null>(null);
+  const shownResultIds = useRef<Set<string>>(new Set());
+
+  function presentResultModal(run: AgentRunRecord) {
+    if (shownResultIds.current.has(run.requestId)) return;
+    shownResultIds.current.add(run.requestId);
+    setResultModal(run);
+  }
+
+  function resetPending() {
+    if (typeof window !== "undefined" && !window.confirm("Clear stale pending requests? Completed history is preserved.")) return;
+    const stale = loadRunHistory().filter((item) => item.status === "Pending");
+    let next = loadRunHistory();
+    for (const item of stale) next = removeRunHistory(item.requestId);
+    setLocalRuns(next);
+    setActiveRun(null);
+    setTx({ phase: "idle", status: "Ready" });
+    shownResultIds.current.clear();
+  }
+
+  function resetEverything() {
+    if (typeof window !== "undefined" && !window.confirm("Wipe ALL local agent history? This cannot be undone. On-chain receipts on Somnia are not affected.")) return;
+    clearRunHistory();
+    shownResultIds.current.clear();
+    setLocalRuns([]);
+    setActiveRun(null);
+    setResultModal(null);
+    setTx({ phase: "idle", status: "Ready" });
+  }
+
+  function exportHistory() {
+    if (typeof window === "undefined") return;
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      runs: loadRunHistory()
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `somniacos-history-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importHistory(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const incoming: AgentRunRecord[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.runs) ? parsed.runs : [];
+        if (!incoming.length) throw new Error("No runs found in file.");
+        let merged = loadRunHistory();
+        for (const run of incoming) {
+          if (run && typeof run.requestId === "string") {
+            merged = upsertRunHistory(run);
+          }
+        }
+        setLocalRuns(merged);
+        window.alert(`Imported ${incoming.length} run${incoming.length === 1 ? "" : "s"}.`);
+      } catch (error) {
+        window.alert(`Import failed: ${error instanceof Error ? error.message : "invalid file"}`);
+      }
+    };
+    reader.readAsText(file);
+  }
   const [tx, setTx] = useState<WorkbenchTx>({ phase: "idle", status: "Ready" });
   const [localRuns, setLocalRuns] = useState<AgentRunRecord[]>([]);
   const [sentinel, setSentinel] = useState<SentinelIntent | null>(null);
@@ -251,6 +320,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     if (!pendingRuns.length) return;
     let cancelled = false;
     async function recoverPendingRuns() {
+      const orphans: string[] = [];
       const recovered = await Promise.all(pendingRuns.map(async (run) => {
         try {
           let requestId = run.requestId;
@@ -259,6 +329,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
             if (!receipt || receipt.status !== "success") return run;
             const extracted = extractRequestId(receipt.logs);
             if (!extracted) return run;
+            orphans.push(run.requestId);
             requestId = extracted;
           }
           const onchain = await readRun(requestId, run.txHash as Hash | undefined);
@@ -281,10 +352,15 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
         }
       }));
       if (cancelled) return;
+      let nextRuns: AgentRunRecord[] | null = null;
+      for (const orphanId of orphans) {
+        nextRuns = removeRunHistory(orphanId);
+      }
+      if (nextRuns) setLocalRuns(nextRuns);
       for (const run of recovered) {
         if (run.status !== "Pending") {
           saveRun(run);
-          if (run.status === "Success") setResultModal(run);
+          if (run.status === "Success") presentResultModal(run);
         }
       }
       await reload();
@@ -396,7 +472,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       setActiveRun(merged);
       if (merged.status === "Success") {
         setTx({ phase: "success", status: "Callback recovered. Result is visible below and saved to History.", hash: target.txHash as Hash });
-        setResultModal(merged);
+        presentResultModal(merged);
       } else if (merged.status === "Pending") {
         setTx({ phase: "callback", status: "Somnia callback has not arrived yet. Try again in a moment — no re-payment needed.", hash: target.txHash as Hash });
       } else {
@@ -506,6 +582,8 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       const requestId = extractRequestId(receipt.logs);
       if (!requestId) throw new Error("Workflow submitted, but the OSAgentRunRequested event was not found in the receipt.");
 
+      setLocalRuns(removeRunHistory(pendingShell.requestId));
+
       setTx({ phase: "callback", status: `OS workflow request #${requestId} is running. Waiting for Somnia validator callback.`, hash });
       const initial = enrichSomniaRun(await readRun(requestId, hash), runContext);
       setActiveRun(initial);
@@ -521,6 +599,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       if (callbackRun.status === "Success") {
         setTx({ phase: "success", status: "Confirmed. The real Somnia Agent callback is visible below and saved to History.", hash });
         setResultModal(callbackRun);
+        shownResultIds.current.add(callbackRun.requestId);
       } else {
         setTx({ phase: "failed", status: callbackRun.status, hash, error: callbackRun.result || "Somnia Agent did not return a usable result.", action: "The signed request remains visible in History. Retry only if the callback failed or timed out." });
       }
@@ -730,15 +809,17 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
               {outputFormats.map((format) => <option key={format.id} value={format.id}>{format.label} - {format.description}</option>)}
             </select>
           </label>
-          {selected.allowsDeepMode ? (
-            <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-black/20 p-4">
-              <input type="checkbox" checked={deepMode} onChange={(event) => setDeepMode(event.target.checked)} className="mt-1 h-4 w-4 accent-signal" />
-              <span className="flex-1">
-                <span className="block font-mono text-xs uppercase tracking-[0.2em] text-signal">Deep research mode</span>
-                <span className="mt-1 block text-xs leading-5 text-white/55">Takes longer. Returns a 6-section structured brief: summary, evidence with sources, conflicting views, confidence per claim, open questions, and next agents. Uses up to 6 reference URLs instead of 3.</span>
+          <label className={`flex items-start gap-3 rounded-2xl border p-4 ${selected.allowsDeepMode ? "border-white/10 bg-black/20" : "border-white/5 bg-black/10 opacity-55"}`}>
+            <input type="checkbox" checked={deepMode && !!selected.allowsDeepMode} disabled={!selected.allowsDeepMode} onChange={(event) => setDeepMode(event.target.checked)} className="mt-1 h-4 w-4 accent-signal" />
+            <span className="flex-1">
+              <span className="block font-mono text-xs uppercase tracking-[0.2em] text-signal">Deep research mode</span>
+              <span className="mt-1 block text-xs leading-5 text-white/55">
+                {selected.allowsDeepMode
+                  ? "Takes longer. Returns a 6-section structured brief: summary, evidence with sources, conflicting views, confidence per claim, open questions, and next agents. Uses up to 6 reference URLs instead of 3."
+                  : "Available on research agents (Atlas Research, Token Lens, Yield Scout, Tx Decoder, Portfolio Compass, Quest Mapper). Pick one of those to enable."}
               </span>
-            </label>
-          ) : null}
+            </span>
+          </label>
           {isTokenMission ? (
             <TokenLaunchPanel
               form={tokenForm}
@@ -810,6 +891,17 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
             </button>
           ) : null}
           {pendingRuns.length ? <p className="mt-3 rounded-2xl border border-ember/25 bg-ember/10 p-3 text-xs leading-5 text-ember">{pendingRuns.length} request{pendingRuns.length === 1 ? "" : "s"} still running. Refresh later; pending requests are recovered from local storage and onchain reads.</p> : null}
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-white/5 pt-3">
+            <button onClick={exportHistory} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-signal/40 hover:text-signal" title="Download local agent history as JSON">Export history</button>
+            <label className="cursor-pointer rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-signal/40 hover:text-signal">
+              Import history
+              <input type="file" accept="application/json" onChange={importHistory} className="hidden" />
+            </label>
+            {pendingRuns.length ? (
+              <button onClick={resetPending} className="rounded-xl border border-ember/30 px-3 py-1.5 text-xs text-ember hover:bg-ember/10" title="Drop stale pending requests but keep completed history">Clear pending</button>
+            ) : null}
+            <button onClick={resetEverything} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:border-red-500/50 hover:text-red-300" title="Wipe all local agent runs">Reset all</button>
+          </div>
         </div>
       </aside>
 

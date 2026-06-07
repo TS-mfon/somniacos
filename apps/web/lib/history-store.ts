@@ -8,6 +8,13 @@ export const receiptHistoryKey = "somniacos.proofReceipts";
 export const missionReceiptHistoryKey = "somniacos.missionReceipts";
 export const compareSessionHistoryKey = "somniacos.compareSessions";
 
+export function clearRunHistory() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(runHistoryKey);
+  window.localStorage.removeItem(receiptHistoryKey);
+  window.localStorage.removeItem(missionReceiptHistoryKey);
+}
+
 export function loadRunHistory() {
   return readJson<AgentRunRecord[]>(runHistoryKey, []).filter((run) => String(run.source) !== "SomniacOS Local");
 }
@@ -21,6 +28,12 @@ export function upsertRunHistory(run: AgentRunRecord) {
   const next = [run, ...current.filter((item) => item.requestId !== run.requestId)].slice(0, 80);
   saveRunHistory(next);
   upsertReceipt(createReceipt(run));
+  return next;
+}
+
+export function removeRunHistory(requestId: string) {
+  const next = loadRunHistory().filter((item) => item.requestId !== requestId);
+  saveRunHistory(next);
   return next;
 }
 
