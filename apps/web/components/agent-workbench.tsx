@@ -26,6 +26,7 @@ import {
   type OutputFormat
 } from "../lib/agent-engine";
 import { clearRunHistory, loadRunHistory, removeRunHistory, upsertMissionReceipt, upsertRunHistory } from "../lib/history-store";
+import { assertSubmittedGasFloor, bufferedGas, estimateGasFees, gasCeiling, PendingTxError, pricingArgs } from "../lib/somnia-gas";
 import { summarizeError } from "../lib/onchain-state";
 
 const DEEP_MODE_DIRECTIVE = "DEEP MODE: First privately outline sub-questions, then research each. Return six sections: (1) Executive summary, (2) Evidence with source URLs, (3) Conflicting views or unknowns, (4) Confidence per claim (low/med/high), (5) Open questions, (6) Recommended next agents. Cite every non-trivial claim inline. Aim for 800-1500 words.";
@@ -126,6 +127,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   const [activeRun, setActiveRun] = useState<AgentRunRecord | null>(null);
   const [resultModal, setResultModal] = useState<AgentRunRecord | null>(null);
   const shownResultIds = useRef<Set<string>>(new Set());
+  const [waitProgress, setWaitProgress] = useState<{ elapsedMs: number; nextCheckMs: number } | null>(null);
 
   function presentResultModal(run: AgentRunRecord) {
     if (shownResultIds.current.has(run.requestId)) return;
@@ -260,9 +262,18 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       return true;
     });
   }, [completedFromEvents, localRuns]);
-  const visibleResults = useMemo(() => anchoredResults.filter((item) => missionMode ? item.missionId && item.missionId !== "regular-task" : !item.missionId || item.missionId === "regular-task"), [anchoredResults, missionMode]);
+  const visibleResults = useMemo(() => anchoredResults.filter((item) => {
+    if (missionMode ? !(item.missionId && item.missionId !== "regular-task") : !(!item.missionId || item.missionId === "regular-task")) return false;
+    if (wallet.address && item.user && item.user.toLowerCase() !== wallet.address.toLowerCase()) return false;
+    return true;
+  }), [anchoredResults, missionMode, wallet.address]);
   const latestResult = visibleResults[0];
-  const pendingRuns = useMemo(() => localRuns.filter((item) => item.status === "Pending" && (missionMode ? item.missionId && item.missionId !== "regular-task" : !item.missionId || item.missionId === "regular-task")), [localRuns, missionMode]);
+  const pendingRuns = useMemo(() => localRuns.filter((item) => {
+    if (item.status !== "Pending") return false;
+    if (missionMode ? !(item.missionId && item.missionId !== "regular-task") : !(!item.missionId || item.missionId === "regular-task")) return false;
+    if (wallet.address && item.user && item.user.toLowerCase() !== wallet.address.toLowerCase()) return false;
+    return true;
+  }), [localRuns, missionMode, wallet.address]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -529,13 +540,14 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       setTx({ phase: "signature", status: "Estimating gas and opening your wallet for one transaction" });
       const gasEstimate = await publicClient.estimateGas(transaction);
       const gas = bufferedGas(gasEstimate);
-      const pricing = await estimateGasFees();
+      const pricing = await estimateGasFees(publicClient);
       const totalGasCost = gas * gasCeiling(pricing);
       if (wallet.balance && parseEther(wallet.balance) < deposit + totalGasCost) {
         throw new Error(`Insufficient STT. This request needs ~${formatEther(deposit + totalGasCost)} STT (fee + gas).`);
       }
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
       const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
+      await assertSubmittedGasFloor(publicClient, hash);
 
       const runContext = {
         account,
@@ -589,21 +601,41 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       setActiveRun(initial);
       saveRun(initial);
 
-      setTx({ phase: "callback", status: `Paid request #${requestId} is running through the Somnia ${mode === 1 ? "Website Parser" : "LLM"} Agent. Waiting for the real callback.`, hash });
-      const callbackRun = enrichSomniaRun(await waitForRun(requestId, hash), runContext);
-      setActiveRun(callbackRun);
-      saveRun(callbackRun);
-      await reload();
-      await refresh(account);
-
-      if (callbackRun.status === "Success") {
-        setTx({ phase: "success", status: "Confirmed. The real Somnia Agent callback is visible below and saved to History.", hash });
-        setResultModal(callbackRun);
-        shownResultIds.current.add(callbackRun.requestId);
+      setTx({ phase: "callback", status: `Paid request #${requestId} is anchoring on Somnia (${mode === 1 ? "Website Parser" : "LLM"} Agent). Polling every 3 s.`, hash });
+      setWaitProgress({ elapsedMs: 0, nextCheckMs: 3000 });
+      const outcome = await waitForRun(requestId, hash, (progress) => {
+        setWaitProgress({ elapsedMs: progress.elapsedMs, nextCheckMs: progress.nextCheckMs });
+        if (progress.interim) {
+          const enrichedInterim = enrichSomniaRun(progress.interim, runContext);
+          setActiveRun(enrichedInterim);
+        }
+      });
+      setWaitProgress(null);
+      if ("timedOut" in outcome) {
+        const interim = outcome.lastInterim ? enrichSomniaRun(outcome.lastInterim, runContext) : initial;
+        setActiveRun(interim);
+        saveRun(interim);
+        setTx({
+          phase: "callback",
+          status: `Still anchoring on Somnia after 8 min. Use Re-check Somnia callback below — no re-payment needed.`,
+          hash
+        });
       } else {
-        setTx({ phase: "failed", status: callbackRun.status, hash, error: callbackRun.result || "Somnia Agent did not return a usable result.", action: "The signed request remains visible in History. Retry only if the callback failed or timed out." });
+        const callbackRun = enrichSomniaRun(outcome, runContext);
+        setActiveRun(callbackRun);
+        saveRun(callbackRun);
+        await reload();
+        await refresh(account);
+        if (callbackRun.status === "Success") {
+          setTx({ phase: "success", status: "Confirmed. The real Somnia Agent callback is visible below and saved to History.", hash });
+          setResultModal(callbackRun);
+          shownResultIds.current.add(callbackRun.requestId);
+        } else {
+          setTx({ phase: "failed", status: callbackRun.status, hash, error: callbackRun.result || "Somnia Agent did not return a usable result.", action: "The signed request remains visible in History. Retry only if the callback failed or timed out." });
+        }
       }
     } catch (error) {
+      setWaitProgress(null);
       setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
     }
   }
@@ -697,9 +729,10 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       setTx({ phase: "signature", status: "Estimating gas and opening your wallet for token deployment" });
       const gasEstimate = await publicClient.estimateGas(transaction);
       const gas = bufferedGas(gasEstimate);
-      const pricing = await estimateGasFees();
+      const pricing = await estimateGasFees(publicClient);
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
       const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
+      await assertSubmittedGasFloor(publicClient, hash);
       setTx({ phase: "receipt", status: "Token deployment submitted. Waiting for receipt.", hash });
       let receipt;
       try {
@@ -837,6 +870,17 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
             <p className="mt-2 text-xs leading-5 text-white/45">{mode === 1 ? "Mode: Website parser" : "Mode: LLM inference"} plus 0.1 STT protocol fee.</p>
             {quoteError ? <p className="mt-2 text-xs leading-5 text-ember">{quoteError}</p> : null}
           </div>
+          {wallet.address && wallet.chainId && wallet.chainId !== somnia.id ? (
+            <div className="rounded-2xl border border-danger/40 bg-danger/10 p-4 text-xs leading-5 text-danger">
+              <span className="font-mono uppercase tracking-[0.2em]">Wrong network</span>
+              <p className="mt-2 text-white/75">Your wallet is on chain {wallet.chainId}. Somnia Shannon is chain {somnia.id}.</p>
+              <button onClick={() => void switchToSomnia()} className="mt-2 inline-flex items-center gap-2 rounded-xl border border-danger/50 px-3 py-1.5 font-semibold text-danger hover:bg-danger/15">Switch to Somnia Shannon</button>
+            </div>
+          ) : null}
+          <div className="rounded-2xl border border-ember/40 bg-ember/10 p-4 text-xs leading-5 text-ember">
+            <span className="font-mono uppercase tracking-[0.2em]">Heads up</span>
+            <p className="mt-2 text-white/75">Your wallet will open. <strong className="text-ember">Keep the suggested gas as‑is — do NOT lower it in Advanced.</strong> Lowering gas stalls the Somnia request. You would still pay the 0.1 STT protocol fee and have to use your wallet&apos;s Speed Up button to recover the request.</p>
+          </div>
           <button onClick={runAgent} disabled={isRunning} className="inline-flex items-center justify-center gap-2 rounded-xl bg-signal px-5 py-3 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60">
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RadioTower className="h-4 w-4" />}
             {missionMode ? "Run mission agent" : "Run agent"}
@@ -882,6 +926,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Status</p>
           <p className="mt-3 text-white">{tx.status}</p>
           <StatusTimeline phase={tx.phase} />
+          {waitProgress ? <AnchorCountdown elapsedMs={waitProgress.elapsedMs} nextCheckMs={waitProgress.nextCheckMs} totalMs={8 * 60_000} /> : null}
           {tx.hash ? <a href={`${somnia.blockExplorers.default.url}/tx/${tx.hash}`} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 break-all font-mono text-xs text-cobalt"><ExternalLink className="h-3 w-3" />{tx.hash}</a> : null}
           {tx.error ? <ErrorCallout message={tx.error} action={tx.action} /> : null}
           {activeRun ? <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 font-mono text-xs text-white/50">request #{activeRun.requestId} - {activeRun.status}</p> : null}
@@ -1155,6 +1200,39 @@ function StatusTimeline({ phase }: { phase: RunPhase }) {
   );
 }
 
+function AnchorCountdown({ elapsedMs, nextCheckMs, totalMs }: { elapsedMs: number; nextCheckMs: number; totalMs: number }) {
+  const [nowOffset, setNowOffset] = useState(0);
+  useEffect(() => {
+    setNowOffset(0);
+    const start = Date.now();
+    const id = window.setInterval(() => setNowOffset(Date.now() - start), 1000);
+    return () => window.clearInterval(id);
+  }, [elapsedMs, nextCheckMs]);
+  const liveElapsed = elapsedMs + nowOffset;
+  const remaining = Math.max(0, totalMs - liveElapsed);
+  const nextIn = Math.max(0, Math.round((nextCheckMs - nowOffset) / 1000));
+  const pct = Math.min(100, Math.round((liveElapsed / totalMs) * 100));
+  return (
+    <div className="mt-3 rounded-2xl border border-signal/25 bg-signal/5 p-3 font-mono text-xs text-signal">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span>Anchoring on Somnia — next check in {nextIn}s</span>
+        <span className="text-white/55">elapsed {formatMinSec(liveElapsed)} of {formatMinSec(totalMs)}</span>
+      </div>
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div className="h-full bg-signal/70" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-2 text-[11px] leading-4 text-white/45">Time remaining: {formatMinSec(remaining)}. We keep retrying the on-chain read; the result will appear here automatically when validators answer.</p>
+    </div>
+  );
+}
+
+function formatMinSec(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 function ErrorCallout({ message, action }: { message: string; action?: string }) {
   return (
     <div className="mt-3 rounded-2xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
@@ -1343,70 +1421,33 @@ function enrichSomniaRun(run: AgentRunRecord, context: {
   return { ...enriched, confidence: scoreAgentRun(enriched) };
 }
 
-async function waitForRun(requestId: string, txHash?: Hash) {
+type WaitForRunProgress = {
+  elapsedMs: number;
+  nextCheckMs: number;
+  interim?: AgentRunRecord;
+};
+
+async function waitForRun(
+  requestId: string,
+  txHash?: Hash,
+  onProgress?: (p: WaitForRunProgress) => void
+): Promise<AgentRunRecord | { timedOut: true; lastInterim?: AgentRunRecord }> {
   const started = Date.now();
-  let lastReadError = "";
-  while (Date.now() - started < 8 * 60_000) {
+  const totalMs = 8 * 60_000;
+  let lastInterim: AgentRunRecord | undefined;
+  while (Date.now() - started < totalMs) {
     try {
       const run = await readRun(requestId, txHash);
       if (run.status !== "Pending") return run;
-    } catch (error) {
-      lastReadError = summarizeError(error);
+      lastInterim = run;
+    } catch {
+      // Swallow read errors; we'll retry.
     }
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const elapsedMs = Date.now() - started;
+    const intervalMs = elapsedMs < 60_000 ? 3000 : 8000;
+    onProgress?.({ elapsedMs, nextCheckMs: intervalMs, interim: lastInterim });
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
-  throw new Error(`Somnia Agent callback has not arrived yet. The paid request is still onchain and saved in History.${lastReadError ? ` Last read error: ${lastReadError}` : ""}`);
+  return { timedOut: true, lastInterim };
 }
 
-function bufferedGas(gas: bigint) {
-  return gas + gas / 5n + 25_000n;
-}
-
-const SOMNIA_GAS_FLOOR = {
-  maxPriorityFeePerGas: 1_000_000_000n,
-  maxFeePerGas: 6_000_000_000n,
-  legacyGasPrice: 6_000_000_000n
-} as const;
-
-type GasPricing =
-  | { type: "eip1559"; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
-  | { type: "legacy"; gasPrice: bigint };
-
-async function estimateGasFees(): Promise<GasPricing> {
-  try {
-    const fees = await publicClient.estimateFeesPerGas();
-    if (fees.maxFeePerGas && fees.maxPriorityFeePerGas) {
-      const priority = max(fees.maxPriorityFeePerGas + fees.maxPriorityFeePerGas / 2n, SOMNIA_GAS_FLOOR.maxPriorityFeePerGas);
-      const cap = max(fees.maxFeePerGas * 2n, SOMNIA_GAS_FLOOR.maxFeePerGas);
-      return { type: "eip1559", maxFeePerGas: max(cap, priority), maxPriorityFeePerGas: priority };
-    }
-  } catch {
-    // Fall through to legacy gas price.
-  }
-  try {
-    const gasPrice = await publicClient.getGasPrice();
-    return { type: "legacy", gasPrice: max(gasPrice * 2n, SOMNIA_GAS_FLOOR.legacyGasPrice) };
-  } catch {
-    return { type: "legacy", gasPrice: SOMNIA_GAS_FLOOR.legacyGasPrice };
-  }
-}
-
-function gasCeiling(pricing: GasPricing) {
-  return pricing.type === "eip1559" ? pricing.maxFeePerGas : pricing.gasPrice;
-}
-
-function pricingArgs(pricing: GasPricing) {
-  return pricing.type === "eip1559"
-    ? { maxFeePerGas: pricing.maxFeePerGas, maxPriorityFeePerGas: pricing.maxPriorityFeePerGas }
-    : { gasPrice: pricing.gasPrice };
-}
-
-function max(a: bigint, b: bigint) {
-  return a > b ? a : b;
-}
-
-class PendingTxError extends Error {
-  constructor(public readonly hash: Hash) {
-    super("stuck in mempool");
-  }
-}

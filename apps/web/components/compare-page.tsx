@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Copy, ExternalLink, GitCompare, Loader2, P
 import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Address, type Hash } from "viem";
 import { buildAgentHandoffs, buildNextActions, defaultMemory, outputFormats, readableAgentLabel, regularWorkbenchAgents, scoreAgentRun, type AgentMemory, type AgentRunRecord, type CompareSession, type CuratedAgent, type OutputFormat } from "../lib/agent-engine";
 import { loadCompareSessions, upsertCompareSession, upsertRunHistory } from "../lib/history-store";
+import { assertSubmittedGasFloor, bufferedGas, estimateGasFees, pricingArgs } from "../lib/somnia-gas";
 import { osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi } from "../lib/contracts";
 import { summarizeError } from "../lib/onchain-state";
 import { useSomniaWallet } from "./wallet-button";
@@ -252,8 +253,11 @@ export function ComparePage() {
     } as const;
     setTxStatus(`Estimating gas and opening wallet for ${agent.role}.`);
     const gasEstimate = await publicClient.estimateGas(transaction);
+    const gas = bufferedGas(gasEstimate);
+    const pricing = await estimateGasFees(publicClient);
     const client = createWalletClient({ chain: somnia, transport: walletClient() });
-    const hash = await client.sendTransaction({ ...transaction, gas: bufferedGas(gasEstimate) });
+    const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
+    await assertSubmittedGasFloor(publicClient, hash);
     setTxStatus(`${agent.role} transaction submitted. Waiting for Somnia receipt.`);
     const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
     if (receipt.status !== "success") throw new Error(`${agent.role} Somnia transaction reverted.`);
@@ -396,6 +400,10 @@ export function ComparePage() {
           </div>
           {txStatus ? <p className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm text-white/62">{txStatus}</p> : null}
           {error ? <p className="flex gap-2 rounded-2xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {error}</p> : null}
+          <div className="rounded-2xl border border-ember/40 bg-ember/10 p-4 text-xs leading-5 text-ember">
+            <span className="font-mono uppercase tracking-[0.2em]">Heads up</span>
+            <p className="mt-2 text-white/75">Your wallet will open once per agent. <strong className="text-ember">Keep the suggested gas — do NOT lower it in Advanced.</strong> Lowering gas stalls the Somnia request and you would still pay the protocol fee.</p>
+          </div>
           <button onClick={runCompare} disabled={running || !deposit || selectedAgents.length < 2} className="inline-flex items-center justify-center gap-2 rounded-xl bg-signal px-5 py-3 font-semibold text-black disabled:opacity-60">
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : wallet.address ? <Play className="h-4 w-4" /> : <WalletCards className="h-4 w-4" />}
             {wallet.address ? "Run paid compare" : "Connect and run paid compare"}
@@ -540,6 +548,3 @@ async function waitForRun(requestId: string, txHash: Hash, account: Address, fal
   return failed;
 }
 
-function bufferedGas(gas: bigint) {
-  return gas + gas / 5n + 25_000n;
-}
