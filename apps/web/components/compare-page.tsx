@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Copy, ExternalLink, GitCompare, Loader2, P
 import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Address, type Hash } from "viem";
 import { buildAgentHandoffs, buildNextActions, defaultMemory, outputFormats, readableAgentLabel, regularWorkbenchAgents, scoreAgentRun, type AgentMemory, type AgentRunRecord, type CompareSession, type CuratedAgent, type OutputFormat } from "../lib/agent-engine";
 import { loadCompareSessions, upsertCompareSession, upsertRunHistory } from "../lib/history-store";
-import { assertSubmittedGasFloor, bufferedGas, estimateGasFees, pricingArgs } from "../lib/somnia-gas";
+import { bufferedGas, estimateGasFees, pricingArgs } from "../lib/somnia-gas";
 import { osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi } from "../lib/contracts";
 import { summarizeError } from "../lib/onchain-state";
 import { useSomniaWallet } from "./wallet-button";
@@ -257,7 +257,6 @@ export function ComparePage() {
     const pricing = await estimateGasFees(publicClient);
     const client = createWalletClient({ chain: somnia, transport: walletClient() });
     const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
-    await assertSubmittedGasFloor(publicClient, hash);
     setTxStatus(`${agent.role} transaction submitted. Waiting for Somnia receipt.`);
     const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
     if (receipt.status !== "success") throw new Error(`${agent.role} Somnia transaction reverted.`);

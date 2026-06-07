@@ -5,7 +5,7 @@ import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionD
 import { AlertTriangle, Brain, CheckCircle2, Clock3, Copy, ExternalLink, GitBranch, Loader2, RadioTower, Sparkles, X } from "lucide-react";
 import { useOnchainActivity } from "./live-economy";
 import { useSomniaWallet } from "./wallet-button";
-import { extensionContracts, osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi, somniacTokenFactoryAbi } from "../lib/contracts";
+import { contracts, extensionContracts, osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterAbi, somniacAgentRouterV2Abi, somniacTokenFactoryAbi } from "../lib/contracts";
 import {
   agentMissions,
   buildAgentHandoffs,
@@ -26,7 +26,7 @@ import {
   type OutputFormat
 } from "../lib/agent-engine";
 import { clearRunHistory, loadRunHistory, removeRunHistory, upsertMissionReceipt, upsertRunHistory } from "../lib/history-store";
-import { assertSubmittedGasFloor, bufferedGas, estimateGasFees, gasCeiling, PendingTxError, pricingArgs } from "../lib/somnia-gas";
+import { bufferedGas, estimateGasFees, gasCeiling, PendingTxError, pricingArgs } from "../lib/somnia-gas";
 import { summarizeError } from "../lib/onchain-state";
 
 const DEEP_MODE_DIRECTIVE = "DEEP MODE: First privately outline sub-questions, then research each. Return six sections: (1) Executive summary, (2) Evidence with source URLs, (3) Conflicting views or unknowns, (4) Confidence per claim (low/med/high), (5) Open questions, (6) Recommended next agents. Cite every non-trivial claim inline. Aim for 800-1500 words.";
@@ -451,6 +451,50 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     }
   }
 
+  async function importByTxHash() {
+    const raw = typeof window !== "undefined" ? window.prompt("Paste the transaction hash from your wallet (0x...):") : "";
+    const hash = raw?.trim();
+    if (!hash || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+      if (hash) window.alert("That does not look like a valid 0x... transaction hash.");
+      return;
+    }
+    try {
+      setTx({ phase: "receipt", status: "Looking up your transaction on Somnia.", hash: hash as Hash });
+      const receipt = await publicClient.getTransactionReceipt({ hash: hash as Hash }).catch(() => null);
+      if (!receipt) {
+        setTx({ phase: "callback", status: "Transaction not mined yet. Try again in a moment.", hash: hash as Hash });
+        return;
+      }
+      if (receipt.status !== "success") throw new Error("That transaction reverted on Somnia.");
+      const requestId = extractRequestId(receipt.logs);
+      if (!requestId) throw new Error("That transaction is not a Somnia Agent request (no OSAgentRunRequested event).");
+      const run = await readRun(requestId, hash as Hash);
+      const account = (wallet.address ?? run.user) as Address;
+      const enriched = enrichSomniaRun(run, {
+        account,
+        selected,
+        task: run.task || goal.trim(),
+        constraints: run.constraints || constraints.trim(),
+        urls,
+        missionId,
+        outputFormat,
+        memory
+      });
+      saveRun(enriched);
+      setActiveRun(enriched);
+      if (enriched.status === "Success") {
+        setTx({ phase: "success", status: "Recovered. The Somnia Agent result is below and saved to History.", hash: hash as Hash });
+        presentResultModal(enriched);
+      } else if (enriched.status === "Pending") {
+        setTx({ phase: "callback", status: "Recovered. Still anchoring on Somnia — the Re-check button will resolve it.", hash: hash as Hash });
+      } else {
+        setTx({ phase: "failed", status: enriched.status, hash: hash as Hash, error: enriched.result || "Somnia Agent did not return a usable result.", action: "The signed request is now in History." });
+      }
+    } catch (error) {
+      setTx({ phase: "failed", status: "Needs attention", error: summarizeError(error), action: recommendedAction(error) });
+    }
+  }
+
   async function retryCallback() {
     const target = activeRun ?? pendingRuns[0];
     if (!target || !target.txHash) return;
@@ -547,7 +591,6 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       }
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
       const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
-      await assertSubmittedGasFloor(publicClient, hash);
 
       const runContext = {
         account,
@@ -581,14 +624,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       saveRun(pendingShell);
 
       setTx({ phase: "receipt", status: "Workflow submitted. Waiting for Somnia receipt.", hash });
-      let receipt;
-      try {
-        receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
-      } catch {
-        const onchainTx = await publicClient.getTransaction({ hash }).catch(() => null);
-        if (!onchainTx || onchainTx.blockNumber === null) throw new PendingTxError(hash);
-        receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
-      }
+      const receipt = await waitForReceiptWithRetry(publicClient, hash);
       if (receipt.status !== "success") throw new Error("Somnia transaction reverted.");
 
       const requestId = extractRequestId(receipt.logs);
@@ -732,16 +768,8 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       const pricing = await estimateGasFees(publicClient);
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
       const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
-      await assertSubmittedGasFloor(publicClient, hash);
       setTx({ phase: "receipt", status: "Token deployment submitted. Waiting for receipt.", hash });
-      let receipt;
-      try {
-        receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
-      } catch {
-        const onchainTx = await publicClient.getTransaction({ hash }).catch(() => null);
-        if (!onchainTx || onchainTx.blockNumber === null) throw new PendingTxError(hash);
-        receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
-      }
+      const receipt = await waitForReceiptWithRetry(publicClient, hash);
       if (receipt.status !== "success") throw new Error("Token deployment reverted.");
       const artifact = extractTokenCreated(receipt.logs);
       if (!artifact) throw new Error("Token deployed, but TokenCreated event was not found.");
@@ -937,6 +965,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           ) : null}
           {pendingRuns.length ? <p className="mt-3 rounded-2xl border border-ember/25 bg-ember/10 p-3 text-xs leading-5 text-ember">{pendingRuns.length} request{pendingRuns.length === 1 ? "" : "s"} still running. Refresh later; pending requests are recovered from local storage and onchain reads.</p> : null}
           <div className="mt-4 flex flex-wrap gap-2 border-t border-white/5 pt-3">
+            <button onClick={importByTxHash} className="rounded-xl border border-signal/40 bg-signal/10 px-3 py-1.5 text-xs font-semibold text-signal hover:bg-signal/20" title="Paste a tx hash and recover the agent result from Somnia">Recover by tx hash</button>
             <button onClick={exportHistory} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-signal/40 hover:text-signal" title="Download local agent history as JSON">Export history</button>
             <label className="cursor-pointer rounded-xl border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-signal/40 hover:text-signal">
               Import history
@@ -1319,12 +1348,18 @@ function ResultModal({ run, onClose }: { run: AgentRunRecord; onClose: () => voi
 
 function extractRequestId(logs: readonly { address: Address; data: `0x${string}`; topics: readonly [`0x${string}`, ...`0x${string}`[]] | readonly [] }[]) {
   for (const log of logs) {
-    if (log.address.toLowerCase() !== osContracts.SomniacAgentRouterV2.toLowerCase()) continue;
-    try {
-      const decoded = decodeEventLog({ abi: somniacAgentRouterV2Abi, data: log.data, topics: [...log.topics] });
-      if (decoded.eventName === "OSAgentRunRequested") return String((decoded.args as { requestId?: bigint }).requestId ?? "");
-    } catch {
-      // Ignore non-router events in the same transaction.
+    const addr = log.address.toLowerCase();
+    if (addr === osContracts.SomniacAgentRouterV2.toLowerCase()) {
+      try {
+        const decoded = decodeEventLog({ abi: somniacAgentRouterV2Abi, data: log.data, topics: [...log.topics] });
+        if (decoded.eventName === "OSAgentRunRequested") return String((decoded.args as { requestId?: bigint }).requestId ?? "");
+      } catch { /* try next */ }
+    }
+    if (addr === contracts.SomniacAgentRouter.toLowerCase()) {
+      try {
+        const decoded = decodeEventLog({ abi: somniacAgentRouterAbi, data: log.data, topics: [...log.topics] });
+        if (decoded.eventName === "AgentRunRequested") return String((decoded.args as { requestId?: bigint }).requestId ?? "");
+      } catch { /* try next */ }
     }
   }
   return "";
@@ -1365,28 +1400,57 @@ function extractTokenCreated(logs: readonly { address: Address; data: `0x${strin
 }
 
 async function readRun(requestId: string, txHash?: Hash): Promise<AgentRunRecord> {
-  const run = await publicClient.readContract({
+  // V2 router layout: [processId, stepId, user, capabilityId, appAgentId, task, url, somniaAgentId, mode, status, result]
+  const v2 = await publicClient.readContract({
     address: osContracts.SomniacAgentRouterV2 as Address,
     abi: somniacAgentRouterV2Abi,
     functionName: "getRun",
     args: [BigInt(requestId)]
-  }) as readonly unknown[];
-  return {
-    requestId,
-    user: String(run[2]),
-    appAgentId: String(run[4]),
-    task: String(run[5]),
-    constraints: "",
-    url: String(run[6]),
-    somniaAgentId: String(run[7]),
-    mode: modeLabels[Number(run[8])] ?? "LLM",
-    status: statusLabels[Number(run[9])] ?? "Pending",
-    result: String(run[10]),
-    source: "Somnia",
-    createdAt: "",
-    completedAt: "",
-    txHash
-  };
+  }).catch(() => null) as readonly unknown[] | null;
+  if (v2 && String(v2[2]).toLowerCase() !== "0x0000000000000000000000000000000000000000") {
+    return {
+      requestId,
+      user: String(v2[2]),
+      appAgentId: String(v2[4]),
+      task: String(v2[5]),
+      constraints: "",
+      url: String(v2[6]),
+      somniaAgentId: String(v2[7]),
+      mode: modeLabels[Number(v2[8])] ?? "LLM",
+      status: statusLabels[Number(v2[9])] ?? "Pending",
+      result: String(v2[10]),
+      source: "Somnia",
+      createdAt: "",
+      completedAt: "",
+      txHash
+    };
+  }
+  // V1 router layout: [user, appAgentId, task, constraints, url, somniaAgentId, mode, status, result, createdAt, completedAt]
+  const v1 = await publicClient.readContract({
+    address: contracts.SomniacAgentRouter as Address,
+    abi: somniacAgentRouterAbi,
+    functionName: "getRun",
+    args: [BigInt(requestId)]
+  }).catch(() => null) as readonly unknown[] | null;
+  if (v1) {
+    return {
+      requestId,
+      user: String(v1[0]),
+      appAgentId: String(v1[1]),
+      task: String(v1[2]),
+      constraints: String(v1[3]),
+      url: String(v1[4]),
+      somniaAgentId: String(v1[5]),
+      mode: modeLabels[Number(v1[6])] ?? "LLM",
+      status: statusLabels[Number(v1[7])] ?? "Pending",
+      result: String(v1[8]),
+      source: "Somnia",
+      createdAt: "",
+      completedAt: "",
+      txHash
+    };
+  }
+  throw new Error(`Could not find request #${requestId} on either router.`);
 }
 
 function memorySnapshot(memory: AgentMemory) {
@@ -1426,6 +1490,22 @@ type WaitForRunProgress = {
   nextCheckMs: number;
   interim?: AgentRunRecord;
 };
+
+async function waitForReceiptWithRetry(client: typeof publicClient, hash: Hash) {
+  try {
+    return await client.waitForTransactionReceipt({ hash, timeout: 120_000 });
+  } catch {
+    // First timeout: the tx may have mined but viem didn't observe it yet. Probe directly.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const tx = await client.getTransaction({ hash }).catch(() => null);
+      if (tx && tx.blockNumber !== null) {
+        return await client.waitForTransactionReceipt({ hash, timeout: 60_000 });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+    throw new PendingTxError(hash);
+  }
+}
 
 async function waitForRun(
   requestId: string,

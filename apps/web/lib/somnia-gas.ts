@@ -53,16 +53,3 @@ export class PendingTxError extends Error {
   }
 }
 
-export async function assertSubmittedGasFloor(publicClient: PublicClient, hash: Hash) {
-  const floor = SOMNIA_GAS_FLOOR.maxFeePerGas / 2n;
-  try {
-    const tx = await publicClient.getTransaction({ hash });
-    const effective = tx.maxFeePerGas ?? tx.gasPrice ?? 0n;
-    if (effective > 0n && effective < floor) {
-      throw new PendingTxError(hash, "stuck in mempool: gas too low");
-    }
-  } catch (error) {
-    if (error instanceof PendingTxError) throw error;
-    // Transaction not yet propagated — let the normal receipt wait handle it.
-  }
-}
