@@ -129,6 +129,8 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   const [resultModal, setResultModal] = useState<AgentRunRecord | null>(null);
   const shownResultIds = useRef<Set<string>>(new Set());
   const recoveringIds = useRef<Set<string>>(new Set());
+  const autoScannedAddrs = useRef<Set<string>>(new Set());
+  const [autoScanDone, setAutoScanDone] = useState(false);
   const notify = useNotifications();
   const [waitProgress, setWaitProgress] = useState<{ elapsedMs: number; nextCheckMs: number } | null>(null);
   const [walletKind, setWalletKind] = useState<WalletKind>("unknown");
@@ -138,6 +140,119 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
 
   useEffect(() => {
     if (typeof window !== "undefined") setWalletKind(detectWalletKind(window.ethereum));
+  }, [wallet.address]);
+
+  useEffect(() => {
+    if (!wallet.address) return;
+    const key = wallet.address.toLowerCase();
+    if (autoScannedAddrs.current.has(key)) {
+      setAutoScanDone(true);
+      return;
+    }
+    autoScannedAddrs.current.add(key);
+    let cancelled = false;
+
+    async function autoScanRecovery() {
+      try {
+        const latest = await publicClient.getBlockNumber();
+        // Bound the scan to the last 200,000 blocks (Somnia ~1 block/s → ~2.3 days).
+        const fromBlock = latest > 200_000n ? latest - 200_000n : 0n;
+        const userTopic = `0x${"0".repeat(24)}${wallet.address!.toLowerCase().slice(2)}` as `0x${string}`;
+
+        // V1 router event AgentRunRequested(uint256 indexed requestId, address indexed user, ...)
+        const v1EventTopic = "0x9b0413c720ced763dbff0ace2a9f062ed6fc370044f1c2e050b1f9dc9db6f648" as `0x${string}`;
+        // V2 router event OSAgentRunRequested(uint256 indexed processId, uint256 indexed stepId, uint256 indexed requestId, ...)
+        const v2EventTopic = "0xb62339927ed9948fd837358a55f5b9a824f7b047043faece66965593ed726889" as `0x${string}`;
+
+        type RawLog = { topics?: readonly (`0x${string}` | null)[]; transactionHash?: `0x${string}` | null };
+        const fromHex = `0x${fromBlock.toString(16)}` as `0x${string}`;
+        const toHexLatest = `0x${latest.toString(16)}` as `0x${string}`;
+        const [v1Logs, v2Logs] = await Promise.all([
+          publicClient.request({
+            method: "eth_getLogs",
+            params: [{
+              address: contracts.SomniacAgentRouter as Address,
+              fromBlock: fromHex,
+              toBlock: toHexLatest,
+              topics: [v1EventTopic, null, userTopic]
+            }]
+          }).then((res) => res as RawLog[]).catch(() => [] as RawLog[]),
+          publicClient.request({
+            method: "eth_getLogs",
+            params: [{
+              address: osContracts.SomniacAgentRouterV2 as Address,
+              fromBlock: fromHex,
+              toBlock: toHexLatest,
+              topics: [v2EventTopic]
+            }]
+          }).then((res) => res as RawLog[]).catch(() => [] as RawLog[])
+        ]);
+
+        const v1RequestIds: string[] = [];
+        for (const log of v1Logs) {
+          const topic1 = log.topics?.[1];
+          if (topic1) v1RequestIds.push(BigInt(topic1).toString());
+        }
+
+        // V2 user is non-indexed; filter by tx.from matching the wallet.
+        const v2RequestIds: string[] = [];
+        if (v2Logs.length) {
+          const txHashes = Array.from(new Set(v2Logs.map((log) => log.transactionHash).filter(Boolean))) as `0x${string}`[];
+          const txs = await Promise.all(txHashes.map((hash) => publicClient.getTransaction({ hash }).catch(() => null)));
+          const ownTxHashes = new Set<string>();
+          for (let i = 0; i < txHashes.length; i++) {
+            const tx = txs[i];
+            if (tx && tx.from?.toLowerCase() === wallet.address!.toLowerCase()) ownTxHashes.add(txHashes[i]);
+          }
+          for (const log of v2Logs) {
+            const topic3 = log.topics?.[3];
+            if (log.transactionHash && ownTxHashes.has(log.transactionHash) && topic3) {
+              v2RequestIds.push(BigInt(topic3).toString());
+            }
+          }
+        }
+
+        const allRequestIds = Array.from(new Set([...v1RequestIds, ...v2RequestIds])).slice(0, 20);
+        const existing = new Set(loadRunHistory().map((item) => item.requestId));
+
+        for (const requestId of allRequestIds) {
+          if (cancelled) return;
+          if (existing.has(requestId)) continue;
+          try {
+            const run = await readRun(requestId);
+            if (run.user.toLowerCase() !== wallet.address!.toLowerCase()) continue;
+            const enriched = enrichSomniaRun(run, {
+              account: wallet.address! as Address,
+              selected,
+              task: run.task,
+              constraints: run.constraints,
+              urls: [],
+              missionId: "regular-task",
+              outputFormat,
+              memory
+            });
+            saveRun(enriched);
+            shownResultIds.current.add(enriched.requestId);
+            notify.push({
+              kind: run.status === "Success" ? "info" : "error",
+              title: run.status === "Success" ? `Recovered an earlier ${readableAgentLabel(run.appAgentId)} result` : `Recovered a ${run.status} ${readableAgentLabel(run.appAgentId)} run`,
+              body: run.result?.slice(0, 200),
+              link: run.txHash ? { href: `${somnia.blockExplorers.default.url}/tx/${run.txHash}`, label: "view tx" } : undefined,
+              resultRequestId: run.status === "Success" ? enriched.requestId : undefined
+            });
+          } catch {
+            // Skip individual failures silently.
+          }
+        }
+      } catch {
+        // Auto-scan is best-effort; never bubble errors up.
+      } finally {
+        if (!cancelled) setAutoScanDone(true);
+      }
+    }
+
+    void autoScanRecovery();
+    return () => { cancelled = true; };
   }, [wallet.address]);
 
   useEffect(() => {
@@ -721,13 +836,43 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
 
       setLocalRuns(removeRunHistory(pendingShell.requestId));
 
-      setTx({ phase: "callback", status: `OS workflow request #${requestId} is running. Waiting for Somnia validator callback.`, hash });
+      setTx({ phase: "callback", status: `OS workflow request #${requestId} is running. Reading Somnia validator state.`, hash });
       const initial = enrichSomniaRun(await readRun(requestId, hash), runContext);
       setActiveRun(initial);
       saveRun(initial);
 
-      setTx({ phase: "callback", status: `Paid request #${requestId} is anchoring on Somnia (${mode === 1 ? "Website Parser" : "LLM"} Agent). Polling every 3 s.`, hash });
-      setWaitProgress({ elapsedMs: 0, nextCheckMs: 3000 });
+      // Eager terminal-state check — if validators already answered (typical on Somnia),
+      // surface the result now instead of waiting for the first poll cycle.
+      if (initial.status === "Success" || initial.status === "Failed" || initial.status === "TimedOut") {
+        setWaitProgress(null);
+        await reload();
+        await refresh(account);
+        if (initial.status === "Success") {
+          setTx({ phase: "success", status: "Confirmed. Somnia Agent result is visible below and saved to History.", hash });
+          setResultModal(initial);
+          shownResultIds.current.add(initial.requestId);
+          notify.push({
+            kind: "result",
+            title: `${deepActive ? "[Deep] " : ""}${selected.name} returned a result`,
+            body: initial.result?.slice(0, 200),
+            link: hash ? { href: `${somnia.blockExplorers.default.url}/tx/${hash}`, label: "view tx" } : undefined,
+            resultRequestId: initial.requestId
+          });
+        } else {
+          setTx({ phase: "failed", status: initial.status, hash, error: initial.result || "Somnia Agent did not return a usable result.", action: "The signed request remains visible in History." });
+          notify.push({
+            kind: "error",
+            title: `${selected.name} did not return a usable result`,
+            body: initial.result || `Status: ${initial.status}`,
+            link: hash ? { href: `${somnia.blockExplorers.default.url}/tx/${hash}`, label: "view tx" } : undefined
+          });
+        }
+        setActiveRun(null);
+        return;
+      }
+
+      setTx({ phase: "callback", status: `Paid request #${requestId} is anchoring on Somnia (${mode === 1 ? "Website Parser" : "LLM"} Agent). Polling every 1 s.`, hash });
+      setWaitProgress({ elapsedMs: 0, nextCheckMs: 1000 });
       const outcome = await waitForRun(requestId, hash, (progress) => {
         setWaitProgress({ elapsedMs: progress.elapsedMs, nextCheckMs: progress.nextCheckMs });
         if (progress.interim) {
@@ -1111,6 +1256,9 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           {activeRun ? (
             <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 font-mono text-xs text-white/50">
               <div>request #{activeRun.requestId} — {activeRun.status}</div>
+              {activeRun.routerVersion ? (
+                <div className="mt-1 text-[11px] text-white/35">Router: {activeRun.routerVersion.toUpperCase()} {routerAddressShort(activeRun.routerVersion)}</div>
+              ) : null}
               {isDeepRun(activeRun) || (deepMode && selected.allowsDeepMode && (tx.phase === "callback" || tx.phase === "receipt")) ? (
                 <div className="mt-2"><DeepBadge /></div>
               ) : null}
@@ -1145,6 +1293,16 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       </aside>
 
       {latestResult ? <LatestResult run={latestResult} onNextAction={runNextAction} /> : null}
+      {!latestResult && autoScanDone && wallet.address ? (
+        <section className="panel mt-6 rounded-[1.5rem] p-6 text-sm text-white/60">
+          <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Anchored results</p>
+          <h3 className="mt-3 text-2xl font-semibold text-white">No agent results yet</h3>
+          <p className="mt-2 text-white/55">Pick a specialist above, click Run agent, and your result will appear here within a couple of seconds.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button onClick={importByTxHash} className="rounded-xl border border-signal/40 bg-signal/10 px-3 py-1.5 text-xs font-semibold text-signal hover:bg-signal/20">Recover by tx hash</button>
+          </div>
+        </section>
+      ) : null}
       {missionMode ? <MissionTimeline runs={localRuns} activeMissionId={missionId} /> : null}
       {resultModal ? <ResultModal run={resultModal} onClose={() => setResultModal(null)} /> : null}
       {sentinel ? <SecuritySentinel intent={sentinel} onClose={() => setSentinel(null)} /> : null}
@@ -1415,6 +1573,11 @@ function StatusTimeline({ phase }: { phase: RunPhase }) {
   );
 }
 
+function routerAddressShort(version: "v1" | "v2") {
+  const address = version === "v2" ? osContracts.SomniacAgentRouterV2 : contracts.SomniacAgentRouter;
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
 function runButtonCopy(phase: RunPhase, missionMode: boolean) {
   if (phase === "wallet" || phase === "quote") return "Preparing…";
   if (phase === "network") return "Switching network…";
@@ -1663,7 +1826,8 @@ async function readRun(requestId: string, txHash?: Hash): Promise<AgentRunRecord
       source: "Somnia",
       createdAt: "",
       completedAt: "",
-      txHash
+      txHash,
+      routerVersion: "v2"
     };
   }
   // V1 router layout: [user, appAgentId, task, constraints, url, somniaAgentId, mode, status, result, createdAt, completedAt]
@@ -1688,7 +1852,8 @@ async function readRun(requestId: string, txHash?: Hash): Promise<AgentRunRecord
       source: "Somnia",
       createdAt: "",
       completedAt: "",
-      txHash
+      txHash,
+      routerVersion: "v1"
     };
   }
   throw new Error(`Could not find request #${requestId} on either router.`);
@@ -1765,8 +1930,9 @@ async function waitForRun(
       // Swallow read errors; we'll retry.
     }
     const elapsedMs = Date.now() - started;
-    // Validator turnaround is usually 1-3 s. Poll aggressively up front, back off later.
-    const intervalMs = elapsedMs < 30_000 ? 3000 : elapsedMs < 90_000 ? 6000 : 12_000;
+    // Validator turnaround on Somnia is usually < 1 s. Poll at 1 s for the first 10 s,
+    // then back off: 3 s through 30 s, 6 s through 90 s, 12 s after.
+    const intervalMs = elapsedMs < 10_000 ? 1000 : elapsedMs < 30_000 ? 3000 : elapsedMs < 90_000 ? 6000 : 12_000;
     onProgress?.({ elapsedMs, nextCheckMs: intervalMs, interim: lastInterim });
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

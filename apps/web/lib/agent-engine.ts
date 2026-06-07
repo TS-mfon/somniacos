@@ -66,6 +66,7 @@ export type AgentRunRecord = {
   parentRequestId?: string;
   confidence?: AgentConfidence;
   artifact?: AgentArtifact;
+  routerVersion?: "v1" | "v2";
 };
 
 export type OutputFormat = "auto" | "x-post" | "thread" | "brief" | "audit" | "checklist" | "email" | "plan";
