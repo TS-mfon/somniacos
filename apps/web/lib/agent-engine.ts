@@ -35,7 +35,6 @@ export type CuratedAgent = {
   category: "Crypto" | "Work" | "Life" | "Builder";
   defaultTask: string;
   defaultConstraints: string;
-  allowsDeepMode?: boolean;
 };
 
 export type AgentRunRecord = {
@@ -47,7 +46,7 @@ export type AgentRunRecord = {
   url: string;
   somniaAgentId: string;
   mode: "LLM" | "Website";
-  status: "Pending" | "Success" | "Failed" | "TimedOut";
+  status: "Pending" | "Success" | "Failed" | "TimedOut" | "Abandoned";
   result: string;
   source?: "Somnia" | "LLM API";
   missionId?: string;
@@ -244,7 +243,6 @@ export const curatedAgents: CuratedAgent[] = [
     category: "Work",
     defaultTask: "Research the current positioning of Somnia Agents.",
     defaultConstraints: "Return a concise brief with findings, risks, and recommendations.",
-    allowsDeepMode: true
   },
   {
     id: "code-auditor",
@@ -323,7 +321,6 @@ export const curatedAgents: CuratedAgent[] = [
     category: "Crypto",
     defaultTask: "Research a crypto token or protocol and explain the main narrative.",
     defaultConstraints: "Do not give financial advice. Include utility, risks, catalysts, and unknowns.",
-    allowsDeepMode: true
   },
   {
     id: "wallet-risk-scanner",
@@ -350,7 +347,6 @@ export const curatedAgents: CuratedAgent[] = [
     category: "Crypto",
     defaultTask: "Compare three DeFi yield strategies for a conservative user.",
     defaultConstraints: "No financial advice. Explain mechanism, risk, liquidity, and monitoring needs.",
-    allowsDeepMode: true
   },
   {
     id: "transaction-explainer",
@@ -364,7 +360,6 @@ export const curatedAgents: CuratedAgent[] = [
     category: "Crypto",
     defaultTask: "Explain an onchain transaction to a non-technical user.",
     defaultConstraints: "Summarize actors, value moved, contract interactions, risk, and what to verify.",
-    allowsDeepMode: true
   },
   {
     id: "portfolio-planner",
@@ -378,7 +373,6 @@ export const curatedAgents: CuratedAgent[] = [
     category: "Crypto",
     defaultTask: "Create a simple crypto portfolio planning framework.",
     defaultConstraints: "No financial advice. Include risk buckets, position limits, and review cadence.",
-    allowsDeepMode: true
   },
   {
     id: "airdrop-planner",
@@ -392,7 +386,6 @@ export const curatedAgents: CuratedAgent[] = [
     category: "Crypto",
     defaultTask: "Create a safe weekly plan for exploring a new crypto ecosystem.",
     defaultConstraints: "Avoid scammy behavior. Include wallet safety, task tracking, and time budget.",
-    allowsDeepMode: true
   },
   {
     id: "email-writer",

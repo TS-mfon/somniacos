@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, formatUnits, http, isAddress, keccak256, parseEther, parseUnits, toHex, type Address, type Hash } from "viem";
+import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, formatUnits, getAbiItem, http, isAddress, keccak256, parseEther, parseUnits, toEventSelector, toHex, type Address, type Hash } from "viem";
 import { AlertTriangle, Brain, CheckCircle2, Clock3, Copy, ExternalLink, GitBranch, Loader2, RadioTower, Sparkles, X } from "lucide-react";
 import { useOnchainActivity } from "./live-economy";
 import { useSomniaWallet } from "./wallet-button";
-import { contracts, extensionContracts, osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterAbi, somniacAgentRouterV2Abi, somniacTokenFactoryAbi } from "../lib/contracts";
+import { contracts, extensionContracts, osContracts, osKernelConfigured, osKernelEnabled, protocolFeeVaultAbi, somnia, somniacAgentRouterAbi, somniacAgentRouterV2Abi, somniacTokenFactoryAbi } from "../lib/contracts";
 import {
   agentMissions,
   buildAgentHandoffs,
@@ -30,9 +30,10 @@ import { bufferedGas, detectWalletKind, estimateGasFees, gasCeiling, PendingTxEr
 import { useNotifications } from "./notification-center";
 import { summarizeError } from "../lib/onchain-state";
 
-const DEEP_MODE_DIRECTIVE = "DEEP MODE: First privately outline sub-questions, then research each. Return six sections: (1) Executive summary, (2) Evidence with source URLs, (3) Conflicting views or unknowns, (4) Confidence per claim (low/med/high), (5) Open questions, (6) Recommended next agents. Cite every non-trivial claim inline. Aim for 800-1500 words.";
-
 const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
+
+const V1_AGENT_RUN_REQUESTED_TOPIC = toEventSelector(getAbiItem({ abi: somniacAgentRouterAbi, name: "AgentRunRequested" })) as `0x${string}`;
+const V2_OS_AGENT_RUN_REQUESTED_TOPIC = toEventSelector(getAbiItem({ abi: somniacAgentRouterV2Abi, name: "OSAgentRunRequested" })) as `0x${string}`;
 
 const statusLabels: Record<number, AgentRunRecord["status"]> = {
   1: "Pending",
@@ -119,7 +120,6 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   const [outputFormat, setOutputFormat] = useState<OutputFormat>(missionMode ? agentMissions[0].outputFormat : inferOutputFormat(defaultAgent, "auto"));
   const [goal, setGoal] = useState(missionMode ? agentMissions[0].task : defaultAgent.defaultTask);
   const [constraints, setConstraints] = useState(missionMode ? agentMissions[0].constraints : defaultAgent.defaultConstraints);
-  const [deepMode, setDeepMode] = useState(false);
   const [webUrls, setWebUrls] = useState("");
   const [memory, setMemory] = useState<AgentMemory>(defaultMemory());
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -143,49 +143,64 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   }, [wallet.address]);
 
   useEffect(() => {
+    if (!wallet.address) setAutoScanDone(false);
+  }, [wallet.address]);
+
+  useEffect(() => {
     if (!wallet.address) return;
     const key = wallet.address.toLowerCase();
     if (autoScannedAddrs.current.has(key)) {
       setAutoScanDone(true);
       return;
     }
-    autoScannedAddrs.current.add(key);
     let cancelled = false;
+    let scanCompleted = false;
 
     async function autoScanRecovery() {
       try {
         const latest = await publicClient.getBlockNumber();
-        // Bound the scan to the last 200,000 blocks (Somnia ~1 block/s → ~2.3 days).
-        const fromBlock = latest > 200_000n ? latest - 200_000n : 0n;
         const userTopic = `0x${"0".repeat(24)}${wallet.address!.toLowerCase().slice(2)}` as `0x${string}`;
 
-        // V1 router event AgentRunRequested(uint256 indexed requestId, address indexed user, ...)
-        const v1EventTopic = "0x9b0413c720ced763dbff0ace2a9f062ed6fc370044f1c2e050b1f9dc9db6f648" as `0x${string}`;
-        // V2 router event OSAgentRunRequested(uint256 indexed processId, uint256 indexed stepId, uint256 indexed requestId, ...)
-        const v2EventTopic = "0xb62339927ed9948fd837358a55f5b9a824f7b047043faece66965593ed726889" as `0x${string}`;
-
+        // Somnia RPC caps eth_getLogs at 1000 blocks. Walk backward in 1000-block chunks.
+        // Bound the total scan to ~14 days (1.2M blocks) or 200 matching logs.
         type RawLog = { topics?: readonly (`0x${string}` | null)[]; transactionHash?: `0x${string}` | null };
-        const fromHex = `0x${fromBlock.toString(16)}` as `0x${string}`;
-        const toHexLatest = `0x${latest.toString(16)}` as `0x${string}`;
+        const CHUNK = 1000n;
+        const MAX_BLOCKS = 1_200_000n;
+        const MAX_LOGS = 200;
+        const minFrom = latest > MAX_BLOCKS ? latest - MAX_BLOCKS : 0n;
+
+        async function chunkedLogs(filter: { address: Address; topics: (`0x${string}` | null)[] }): Promise<RawLog[]> {
+          const out: RawLog[] = [];
+          let cursor = latest;
+          while (cursor > minFrom && out.length < MAX_LOGS) {
+            if (cancelled) return out;
+            const start = cursor - CHUNK + 1n > minFrom ? cursor - CHUNK + 1n : minFrom;
+            const fromHex = `0x${start.toString(16)}` as `0x${string}`;
+            const toHex = `0x${cursor.toString(16)}` as `0x${string}`;
+            try {
+              const chunkLogs = await publicClient.request({
+                method: "eth_getLogs",
+                params: [{ ...filter, fromBlock: fromHex, toBlock: toHex }]
+              }) as RawLog[];
+              out.push(...chunkLogs);
+            } catch {
+              // Skip the chunk on RPC error; continue walking backward.
+            }
+            if (start === 0n) break;
+            cursor = start - 1n;
+          }
+          return out;
+        }
+
         const [v1Logs, v2Logs] = await Promise.all([
-          publicClient.request({
-            method: "eth_getLogs",
-            params: [{
-              address: contracts.SomniacAgentRouter as Address,
-              fromBlock: fromHex,
-              toBlock: toHexLatest,
-              topics: [v1EventTopic, null, userTopic]
-            }]
-          }).then((res) => res as RawLog[]).catch(() => [] as RawLog[]),
-          publicClient.request({
-            method: "eth_getLogs",
-            params: [{
-              address: osContracts.SomniacAgentRouterV2 as Address,
-              fromBlock: fromHex,
-              toBlock: toHexLatest,
-              topics: [v2EventTopic]
-            }]
-          }).then((res) => res as RawLog[]).catch(() => [] as RawLog[])
+          chunkedLogs({
+            address: contracts.SomniacAgentRouter as Address,
+            topics: [V1_AGENT_RUN_REQUESTED_TOPIC, null, userTopic]
+          }),
+          chunkedLogs({
+            address: osContracts.SomniacAgentRouterV2 as Address,
+            topics: [V2_OS_AGENT_RUN_REQUESTED_TOPIC]
+          })
         ]);
 
         const v1RequestIds: string[] = [];
@@ -195,14 +210,21 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
         }
 
         // V2 user is non-indexed; filter by tx.from matching the wallet.
+        // Batch getTransaction in groups of 5 to avoid RPC rate-limits.
         const v2RequestIds: string[] = [];
         if (v2Logs.length) {
           const txHashes = Array.from(new Set(v2Logs.map((log) => log.transactionHash).filter(Boolean))) as `0x${string}`[];
-          const txs = await Promise.all(txHashes.map((hash) => publicClient.getTransaction({ hash }).catch(() => null)));
           const ownTxHashes = new Set<string>();
-          for (let i = 0; i < txHashes.length; i++) {
-            const tx = txs[i];
-            if (tx && tx.from?.toLowerCase() === wallet.address!.toLowerCase()) ownTxHashes.add(txHashes[i]);
+          for (let offset = 0; offset < txHashes.length; offset += 5) {
+            if (cancelled) return;
+            const batch = txHashes.slice(offset, offset + 5);
+            const results = await Promise.allSettled(batch.map((hash) => publicClient.getTransaction({ hash })));
+            for (let i = 0; i < batch.length; i++) {
+              const result = results[i];
+              if (result.status === "fulfilled" && result.value.from?.toLowerCase() === wallet.address!.toLowerCase()) {
+                ownTxHashes.add(batch[i]);
+              }
+            }
           }
           for (const log of v2Logs) {
             const topic3 = log.topics?.[3];
@@ -221,21 +243,30 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           try {
             const run = await readRun(requestId);
             if (run.user.toLowerCase() !== wallet.address!.toLowerCase()) continue;
-            const enriched = enrichSomniaRun(run, {
-              account: wallet.address! as Address,
-              selected,
-              task: run.task,
-              constraints: run.constraints,
-              urls: [],
+            // Lite enrichment preserves on-chain attribution (do NOT use the currently-selected agent).
+            const enriched: AgentRunRecord = {
+              ...run,
+              source: "Somnia",
               missionId: "regular-task",
-              outputFormat,
-              memory
-            });
+              nextActions: buildNextActions(run.appAgentId, run.task, run.outputFormat ?? "auto"),
+              handoffs: buildAgentHandoffs(run.appAgentId, run.task),
+              confidence: scoreAgentRun(run)
+            };
             saveRun(enriched);
-            shownResultIds.current.add(enriched.requestId);
+            // Only pre-block the modal for terminal Success — otherwise the recovery loop's later
+            // Pending→Success transition would be silently swallowed.
+            if (run.status === "Success") shownResultIds.current.add(enriched.requestId);
+            const notifyKind: "info" | "error" =
+              run.status === "Success" ? "info" :
+              run.status === "Pending" ? "info" :
+              "error";
+            const title =
+              run.status === "Success" ? `Recovered an earlier ${readableAgentLabel(run.appAgentId)} result` :
+              run.status === "Pending" ? `Found a pending ${readableAgentLabel(run.appAgentId)} run — still anchoring` :
+              `Recovered a ${run.status} ${readableAgentLabel(run.appAgentId)} run`;
             notify.push({
-              kind: run.status === "Success" ? "info" : "error",
-              title: run.status === "Success" ? `Recovered an earlier ${readableAgentLabel(run.appAgentId)} result` : `Recovered a ${run.status} ${readableAgentLabel(run.appAgentId)} run`,
+              kind: notifyKind,
+              title,
               body: run.result?.slice(0, 200),
               link: run.txHash ? { href: `${somnia.blockExplorers.default.url}/tx/${run.txHash}`, label: "view tx" } : undefined,
               resultRequestId: run.status === "Success" ? enriched.requestId : undefined
@@ -244,9 +275,11 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
             // Skip individual failures silently.
           }
         }
+        scanCompleted = true;
       } catch {
         // Auto-scan is best-effort; never bubble errors up.
       } finally {
+        if (scanCompleted && !cancelled) autoScannedAddrs.current.add(key);
         if (!cancelled) setAutoScanDone(true);
       }
     }
@@ -280,8 +313,9 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   useEffect(() => {
     return notify.onViewResult((requestId) => {
       const run = loadRunHistory().find((item) => item.requestId === requestId);
-      if (run && run.status === "Success") {
-        // Force-open even if previously shown.
+      if (run && run.status !== "Pending") {
+        // Force-open for any terminal state (Success / Failed / TimedOut / Abandoned)
+        // so the user can see what happened, even if previously dismissed.
         setResultModal(run);
       }
     });
@@ -459,13 +493,32 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     async function loadDeposit() {
       try {
         setQuoteError("");
-        const quoted = await publicClient.readContract({
-          address: osContracts.SomniacAgentRouterV2 as Address,
-          abi: somniacAgentRouterV2Abi,
-          functionName: "getTotalDue",
-          args: [mode]
-        });
-        if (!cancelled) setDeposit(quoted as bigint);
+        try {
+          const quoted = await publicClient.readContract({
+            address: osContracts.SomniacAgentRouterV2 as Address,
+            abi: somniacAgentRouterV2Abi,
+            functionName: "getTotalDue",
+            args: [mode]
+          });
+          if (!cancelled) setDeposit(quoted as bigint);
+          return;
+        } catch {
+          // V2 getTotalDue is unavailable on V1 routers; fall back to deposit + protocol fee.
+        }
+        const [depositOnly, feeAmount] = await Promise.all([
+          publicClient.readContract({
+            address: contracts.SomniacAgentRouter as Address,
+            abi: somniacAgentRouterAbi,
+            functionName: "getRequiredDeposit",
+            args: [mode]
+          }) as Promise<bigint>,
+          publicClient.readContract({
+            address: osContracts.ProtocolFeeVault as Address,
+            abi: protocolFeeVaultAbi,
+            functionName: "feeAmount"
+          }) as Promise<bigint>
+        ]);
+        if (!cancelled) setDeposit(depositOnly + feeAmount);
       } catch (error) {
         if (!cancelled) {
           setDeposit(null);
@@ -482,6 +535,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
   useEffect(() => {
     if (!pendingRuns.length) return;
     let cancelled = false;
+    const ABANDONED_MS = 60 * 60 * 1000; // 1 hour
     async function recoverPendingRuns() {
       const orphans: string[] = [];
       const recovered = await Promise.all(pendingRuns.map(async (run) => {
@@ -492,6 +546,25 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
         // Skip if another recovery iteration is already processing this id.
         if (recoveringIds.current.has(run.requestId)) return run;
         recoveringIds.current.add(run.requestId);
+        // Abandonment heuristic — validators sometimes silently drop a request and
+        // getRun returns Pending forever. After 1 h, flip locally to "Abandoned" so the
+        // recovery loop stops polling and the UI can explain to the user.
+        const createdMs = run.createdAt ? Date.parse(run.createdAt) : 0;
+        if (createdMs > 0 && Date.now() - createdMs > ABANDONED_MS) {
+          try {
+            const onchain = await readRun(run.requestId, run.txHash as Hash | undefined).catch(() => null);
+            if (!onchain || onchain.status === "Pending") {
+              const abandoned: AgentRunRecord = {
+                ...run,
+                status: "Abandoned",
+                completedAt: new Date().toISOString()
+              };
+              return abandoned;
+            }
+          } finally {
+            recoveringIds.current.delete(run.requestId);
+          }
+        }
         try {
           let requestId = run.requestId;
           if (requestId.startsWith("pending-") && run.txHash) {
@@ -533,9 +606,9 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
         if (run.status !== "Pending") {
           const wasShown = shownResultIds.current.has(run.requestId);
           saveRun(run);
-          if (run.status === "Success") {
-            presentResultModal(run);
-            if (!wasShown) {
+          if (!wasShown) {
+            if (run.status === "Success") {
+              presentResultModal(run);
               notify.push({
                 kind: "result",
                 title: `${readableAgentLabel(run.appAgentId)} result is in`,
@@ -543,6 +616,24 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
                 link: run.txHash ? { href: `${somnia.blockExplorers.default.url}/tx/${run.txHash}`, label: "view tx" } : undefined,
                 resultRequestId: run.requestId
               });
+            } else if (run.status === "Abandoned") {
+              notify.push({
+                kind: "info",
+                title: `Validator timeout: ${readableAgentLabel(run.appAgentId)}`,
+                body: "Somnia validators did not produce a result within the expected window. The deposit cannot be reclaimed on-chain. Run the agent again when you're ready.",
+                link: run.txHash ? { href: `${somnia.blockExplorers.default.url}/tx/${run.txHash}`, label: "view tx" } : undefined,
+                resultRequestId: run.requestId
+              });
+              shownResultIds.current.add(run.requestId);
+            } else {
+              notify.push({
+                kind: "error",
+                title: `${readableAgentLabel(run.appAgentId)} did not return a result`,
+                body: run.result || `Status: ${run.status}`,
+                link: run.txHash ? { href: `${somnia.blockExplorers.default.url}/tx/${run.txHash}`, label: "view tx" } : undefined,
+                resultRequestId: run.requestId
+              });
+              shownResultIds.current.add(run.requestId);
             }
           }
         }
@@ -564,7 +655,6 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     setConstraints(agent.defaultConstraints);
     setOutputFormat(inferOutputFormat(agent, "auto"));
     setWebUrls("");
-    if (!agent.allowsDeepMode) setDeepMode(false);
   }
 
   function applyMission(id: string) {
@@ -733,10 +823,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       if (!routerConfigured) throw new Error("SomniacOS fee router is not deployed yet.");
       validateWorkbenchInput(goal, constraints, allUrls);
 
-      const deepActive = deepMode && selected.allowsDeepMode === true;
-      const effectiveConstraints = deepActive
-        ? `${DEEP_MODE_DIRECTIVE}\n\n${constraints.trim()}`.slice(0, 1600)
-        : constraints.trim();
+      const trimmedConstraints = constraints.trim();
       const account = await ensureWalletReady();
       setTx({ phase: "quote", status: "Checking Somnia agent fee plus 0.1 STT protocol fee" });
       if (!deposit) throw new Error("Unable to quote the transaction. Try again in a moment.");
@@ -758,7 +845,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           keccak256(toHex(capability)),
           selected.id,
           goal.trim(),
-          effectiveConstraints,
+          trimmedConstraints,
           urls,
           mode
         ]
@@ -786,7 +873,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
         account,
         selected,
         task: goal.trim(),
-        constraints: effectiveConstraints,
+        constraints: trimmedConstraints,
         urls,
         missionId,
         outputFormat,
@@ -797,7 +884,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
         user: account,
         appAgentId: selected.id,
         task: goal.trim(),
-        constraints: effectiveConstraints,
+        constraints: trimmedConstraints,
         url: urls[0] ?? "",
         somniaAgentId: "",
         mode: mode === 1 ? "Website" : "LLM",
@@ -853,7 +940,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           shownResultIds.current.add(initial.requestId);
           notify.push({
             kind: "result",
-            title: `${deepActive ? "[Deep] " : ""}${selected.name} returned a result`,
+            title: `${selected.name} returned a result`,
             body: initial.result?.slice(0, 200),
             link: hash ? { href: `${somnia.blockExplorers.default.url}/tx/${hash}`, label: "view tx" } : undefined,
             resultRequestId: initial.requestId
@@ -902,7 +989,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           shownResultIds.current.add(callbackRun.requestId);
           notify.push({
             kind: "result",
-            title: `${deepActive ? "[Deep] " : ""}${selected.name} returned a result`,
+            title: `${selected.name} returned a result`,
             body: callbackRun.result?.slice(0, 200),
             link: hash ? { href: `${somnia.blockExplorers.default.url}/tx/${hash}`, label: "view tx" } : undefined,
             resultRequestId: callbackRun.requestId
@@ -1098,19 +1185,10 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">Specialist</span>
             {!missionMode ? (
               <div className="mt-2 flex flex-wrap gap-1">
-                {["All", ...categories, "Research"].map((cat) => (
+                {["All", ...categories].map((cat) => (
                   <button
                     key={cat}
-                    onClick={() => {
-                      setCategoryFilter(cat);
-                      if (cat === "Research") {
-                        const firstResearch = selectableAgents.find((agent) => agent.allowsDeepMode);
-                        if (firstResearch) {
-                          applyAgent(firstResearch);
-                          setDeepMode(true);
-                        }
-                      }
-                    }}
+                    onClick={() => setCategoryFilter(cat)}
                     className={`rounded-lg border px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.16em] transition ${categoryFilter === cat ? "border-signal/50 bg-signal/15 text-signal" : "border-white/10 bg-white/[0.03] text-white/55 hover:border-signal/30 hover:text-white"}`}
                   >
                     {cat}
@@ -1120,12 +1198,12 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
             ) : null}
             <select value={agentId} onChange={(event) => applyAgent(selectableAgents.find((agent) => agent.id === event.target.value) ?? selectableAgents[0])} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
               {categories.map((category) => {
-                if (categoryFilter !== "All" && categoryFilter !== "Research" && categoryFilter !== category) return null;
-                const agentsInCategory = selectableAgents.filter((agent) => agent.category === category && (categoryFilter !== "Research" || agent.allowsDeepMode));
+                if (categoryFilter !== "All" && categoryFilter !== category) return null;
+                const agentsInCategory = selectableAgents.filter((agent) => agent.category === category);
                 if (!agentsInCategory.length) return null;
                 return (
                   <optgroup key={category} label={category}>
-                    {agentsInCategory.map((agent) => <option key={agent.id} value={agent.id}>{agent.role} — {agent.name}{agent.allowsDeepMode ? " · Deep" : ""}</option>)}
+                    {agentsInCategory.map((agent) => <option key={agent.id} value={agent.id}>{agent.role} — {agent.name}</option>)}
                   </optgroup>
                 );
               })}
@@ -1149,17 +1227,6 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
             <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value as OutputFormat)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#101010] px-4 py-3 text-white outline-none focus:border-signal/60">
               {outputFormats.map((format) => <option key={format.id} value={format.id}>{format.label} - {format.description}</option>)}
             </select>
-          </label>
-          <label className={`flex items-start gap-3 rounded-2xl border p-4 ${selected.allowsDeepMode ? "border-white/10 bg-black/20" : "border-white/5 bg-black/10 opacity-55"}`}>
-            <input type="checkbox" checked={deepMode && !!selected.allowsDeepMode} disabled={!selected.allowsDeepMode} onChange={(event) => setDeepMode(event.target.checked)} className="mt-1 h-4 w-4 accent-signal" />
-            <span className="flex-1">
-              <span className="block font-mono text-xs uppercase tracking-[0.2em] text-signal">Deep research mode</span>
-              <span className="mt-1 block text-xs leading-5 text-white/55">
-                {selected.allowsDeepMode
-                  ? "Takes longer. Returns a 6-section structured brief: summary, evidence with sources, conflicting views, confidence per claim, open questions, and next agents. Uses up to 6 reference URLs instead of 3."
-                  : "Available on research agents (Atlas Research, Token Lens, Yield Scout, Tx Decoder, Portfolio Compass, Quest Mapper). Pick one of those to enable."}
-              </span>
-            </span>
           </label>
           {isTokenMission ? (
             <TokenLaunchPanel
@@ -1258,9 +1325,6 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
               <div>request #{activeRun.requestId} — {activeRun.status}</div>
               {activeRun.routerVersion ? (
                 <div className="mt-1 text-[11px] text-white/35">Router: {activeRun.routerVersion.toUpperCase()} {routerAddressShort(activeRun.routerVersion)}</div>
-              ) : null}
-              {isDeepRun(activeRun) || (deepMode && selected.allowsDeepMode && (tx.phase === "callback" || tx.phase === "receipt")) ? (
-                <div className="mt-2"><DeepBadge /></div>
               ) : null}
             </div>
           ) : null}
@@ -1416,7 +1480,6 @@ function AnchoredResults({ results, onNextAction, connected }: { results: AgentR
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h4 className="flex items-center gap-2 font-semibold text-white">
                 {readableAgentLabel(item.appAgentId)}
-                {isDeepRun(item) ? <DeepBadge /> : null}
               </h4>
               <span className="font-mono text-xs text-signal">request #{item.requestId}</span>
             </div>
@@ -1589,19 +1652,6 @@ function runButtonCopy(phase: RunPhase, missionMode: boolean) {
   return missionMode ? "Run mission agent" : "Run agent";
 }
 
-function DeepBadge() {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-signal/40 bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-signal">
-      Deep mode · 6-section brief
-    </span>
-  );
-}
-
-function isDeepRun(run: AgentRunRecord | null | undefined): boolean {
-  if (!run) return false;
-  return typeof run.constraints === "string" && run.constraints.startsWith("DEEP MODE: First privately outline");
-}
-
 function AnchorCountdown({ elapsedMs, nextCheckMs, totalMs }: { elapsedMs: number; nextCheckMs: number; totalMs: number }) {
   const [nowOffset, setNowOffset] = useState(0);
   useEffect(() => {
@@ -1720,7 +1770,6 @@ function ResultModal({ run, onClose }: { run: AgentRunRecord; onClose: () => voi
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Agent result</p>
             <h2 className="mt-3 text-3xl font-semibold text-white">Request #{run.requestId} completed</h2>
-            {isDeepRun(run) ? <div className="mt-2"><DeepBadge /></div> : null}
           </div>
           <button onClick={onClose} className="rounded-full border border-white/10 p-2 text-white/60 hover:text-white"><X className="h-4 w-4" /></button>
         </div>
@@ -1932,7 +1981,10 @@ async function waitForRun(
     const elapsedMs = Date.now() - started;
     // Validator turnaround on Somnia is usually < 1 s. Poll at 1 s for the first 10 s,
     // then back off: 3 s through 30 s, 6 s through 90 s, 12 s after.
-    const intervalMs = elapsedMs < 10_000 ? 1000 : elapsedMs < 30_000 ? 3000 : elapsedMs < 90_000 ? 6000 : 12_000;
+    const baseIntervalMs = elapsedMs < 10_000 ? 1000 : elapsedMs < 30_000 ? 3000 : elapsedMs < 90_000 ? 6000 : 12_000;
+    // Throttle to 30 s when the tab is hidden — saves RPC + battery while the user is elsewhere.
+    const visible = typeof document !== "undefined" ? document.visibilityState === "visible" : true;
+    const intervalMs = visible ? baseIntervalMs : Math.max(baseIntervalMs, 30_000);
     onProgress?.({ elapsedMs, nextCheckMs: intervalMs, interim: lastInterim });
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

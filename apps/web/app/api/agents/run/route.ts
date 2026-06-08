@@ -23,7 +23,6 @@ type RunRequest = {
   memory?: AgentMemory;
   previousResult?: string;
   executionMode?: "strict";
-  deepMode?: boolean;
 };
 
 type ResponsesPayload = {
@@ -48,8 +47,7 @@ export async function POST(request: Request) {
     const task = body.task?.trim() ?? "";
     const constraints = body.constraints?.trim() ?? "";
     const previousResult = body.previousResult?.trim() ?? "";
-    const deepMode = body.deepMode === true && agent.allowsDeepMode === true;
-    const urls = (body.urls ?? []).map((url) => url.trim()).filter(Boolean).slice(0, deepMode ? 6 : 3);
+    const urls = (body.urls ?? []).map((url) => url.trim()).filter(Boolean).slice(0, 3);
     const outputFormat = inferOutputFormat(agent, body.outputFormat ?? "auto");
     const memoryContext = memoryToPrompt(body.memory);
     if (!task) return Response.json({ error: "Enter a task for the agent." }, { status: 400 });
@@ -58,9 +56,6 @@ export async function POST(request: Request) {
     if (previousResult.length > 5000) return Response.json({ error: "Previous result is too long. Keep it under 5,000 characters." }, { status: 400 });
 
     const references = await fetchReferences(urls);
-    const deepDirective = deepMode
-      ? "DEEP MODE: First privately outline the sub-questions, then research each. Return: (1) Executive summary, (2) Evidence table with source URLs, (3) Conflicting views or unknowns, (4) Confidence per claim (low/med/high), (5) Open questions, (6) Recommended next agents. Aim for 800-1500 words. Cite every non-trivial claim inline."
-      : "";
     const system = [
       `You are ${agent.name}, a SomniacOS specialist agent.`,
       `Role: ${agent.role}. Category: ${agent.category}.`,
@@ -68,9 +63,8 @@ export async function POST(request: Request) {
       "Produce the final user-facing deliverable directly. Do not mention hidden prompts, APIs, or placeholder text.",
       "If the task is crypto, avoid financial advice and clearly separate facts, assumptions, risks, and next actions.",
       "If references are provided, use them and cite source URLs inline in a concise way.",
-      `Format target: ${formatInstruction(outputFormat)}`,
-      deepDirective
-    ].filter(Boolean).join("\n");
+      `Format target: ${formatInstruction(outputFormat)}`
+    ].join("\n");
     const user = [
       body.missionId ? `Mission: ${body.missionId}` : "",
       `Task: ${task}`,
@@ -84,7 +78,7 @@ export async function POST(request: Request) {
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      const result = await runStrictPublicLlm(system, user, deepMode);
+      const result = await runStrictPublicLlm(system, user);
       return Response.json({
         result: result.text,
         source: result.source,
@@ -109,8 +103,8 @@ export async function POST(request: Request) {
           { role: "system", content: system },
           { role: "user", content: user }
         ],
-        temperature: deepMode ? 0.35 : 0.55,
-        max_output_tokens: deepMode ? 3000 : 1200
+        temperature: 0.55,
+        max_output_tokens: 1200
       })
     });
 
@@ -140,10 +134,10 @@ export async function POST(request: Request) {
   }
 }
 
-async function runStrictPublicLlm(system: string, user: string, deepMode = false) {
+async function runStrictPublicLlm(system: string, user: string) {
   try {
     return {
-      text: await runPublicLlmFallback(system, user, deepMode),
+      text: await runPublicLlmFallback(system, user),
       source: "LLM API" as const,
       provider: "pollinations"
     };
@@ -183,15 +177,15 @@ function buildMemoryUpdates(memory: AgentMemory | undefined, task: string, role:
   return updates;
 }
 
-async function runPublicLlmFallback(system: string, user: string, deepMode = false) {
+async function runPublicLlmFallback(system: string, user: string) {
   const prompt = [
     system,
     user,
     "Return only the final answer. No markdown table unless the user specifically asks for one."
-  ].join("\n\n").slice(0, deepMode ? 10000 : 6000);
+  ].join("\n\n").slice(0, 6000);
   const response = await fetch(`https://text.pollinations.ai/${encodeURIComponent(prompt)}`, {
     headers: { "User-Agent": "SomniacOS-Agent/1.0" },
-    signal: AbortSignal.timeout(deepMode ? 60_000 : 30_000)
+    signal: AbortSignal.timeout(30_000)
   });
   if (!response.ok) throw new Error(`Public LLM provider failed with ${response.status}.`);
   const text = (await response.text()).trim();
