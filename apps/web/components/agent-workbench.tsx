@@ -819,6 +819,8 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
 
   async function executeAgentWorkflow() {
     try {
+      setActiveRun(null);
+      setWaitProgress(null);
       setTx({ phase: "wallet", status: "Checking wallet and task details" });
       if (!routerConfigured) throw new Error("SomniacOS fee router is not deployed yet.");
       validateWorkbenchInput(goal, constraints, allUrls);
@@ -867,7 +869,9 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
         throw new Error(`Insufficient STT. This request needs ~${formatEther(deposit + totalGasCost)} STT (fee + gas).`);
       }
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
-      const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
+      // Pin an explicit pending nonce so back-to-back runs don't reuse a stale wallet-side nonce.
+      const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
+      const hash = await client.sendTransaction({ ...transaction, gas, nonce, ...pricingArgs(pricing) });
 
       const runContext = {
         account,
@@ -1107,7 +1111,8 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
       const rawPricing = await estimateGasFees(publicClient);
       const pricing = pickPricingForWallet(rawPricing, detectWalletKind(window.ethereum));
       const client = createWalletClient({ chain: somnia, transport: walletClient() });
-      const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
+      const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
+      const hash = await client.sendTransaction({ ...transaction, gas, nonce, ...pricingArgs(pricing) });
       setTx({ phase: "receipt", status: "Token deployment submitted. Waiting for receipt.", hash });
       const receipt = await waitForReceiptWithRetry(publicClient, hash);
       if (receipt.status !== "success") throw new Error("Token deployment reverted.");

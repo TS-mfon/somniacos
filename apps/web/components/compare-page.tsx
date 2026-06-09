@@ -257,7 +257,8 @@ export function ComparePage() {
     const rawPricing = await estimateGasFees(publicClient);
     const pricing = pickPricingForWallet(rawPricing, detectWalletKind(typeof window !== "undefined" ? window.ethereum : undefined));
     const client = createWalletClient({ chain: somnia, transport: walletClient() });
-    const hash = await client.sendTransaction({ ...transaction, gas, ...pricingArgs(pricing) });
+    const nonce = await publicClient.getTransactionCount({ address: account, blockTag: "pending" });
+    const hash = await client.sendTransaction({ ...transaction, gas, nonce, ...pricingArgs(pricing) });
     setTxStatus(`${agent.role} transaction submitted. Waiting for Somnia receipt.`);
     const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
     if (receipt.status !== "success") throw new Error(`${agent.role} Somnia transaction reverted.`);
