@@ -1,15 +1,17 @@
-import type { Address } from "viem";
+import { getAddress, type Address } from "viem";
 
 // Deployed to Somnia Shannon Testnet (chain 50312) on 2026-06-10.
 // Deployer: 0xEd9EDd8586b20524CafA4F568413C504C9B03172
 // Built against the real Somnia Agents Platform (0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776).
 // draft() verified end-to-end: requestId 5897647 resolved via the live validator callback.
+// getAddress() normalizes EIP-55 casing so a mis-cased env value can't break readContract.
+const addr = (value: string): Address => getAddress(value);
+
 export const agentEconomyContracts = {
-  ProtocolTreasury:       (process.env.NEXT_PUBLIC_AGENT_TREASURY        ?? "0x73834Ffb9747777D8D91f7C73Ff8DAECf1659e29") as Address,
-  AgentEconomyDispatcher: (process.env.NEXT_PUBLIC_AGENT_DISPATCHER      ?? "0x71F6C53046539A2EB906F483B750eA05987A9c3b") as Address,
-  ContentCodeSkills:      (process.env.NEXT_PUBLIC_AGENT_CONTENT_SKILLS  ?? "0x8b1d43b6aA40Ecb94c164333a3f5425B7a36B491") as Address,
-  AgentIdentity:          (process.env.NEXT_PUBLIC_AGENT_IDENTITY        ?? "0x974edB3E733f6aa2f74C286054D9d5106667FD08") as Address,
+  ProtocolTreasury:       addr(process.env.NEXT_PUBLIC_AGENT_TREASURY       ?? "0x73834Ffb9747777D8D91f7C73Ff8DAECf1659e29"),
+  AgentEconomyDispatcher: addr(process.env.NEXT_PUBLIC_AGENT_DISPATCHER     ?? "0x71F6C53046539A2EB906F483B750eA05987A9c3b"),
+  ContentCodeSkills:      addr(process.env.NEXT_PUBLIC_AGENT_CONTENT_SKILLS ?? "0x8B1D43B6aa40ecB94c164333A3f5425b7a36B491"),
+  AgentIdentity:          addr(process.env.NEXT_PUBLIC_AGENT_IDENTITY       ?? "0x974eDB3E733F6aa2f74c286054D9d5106667fd08"),
 } as const;
 
-export const agentEconomyConfigured =
-  Object.values(agentEconomyContracts).every((address) => address !== "0x_______");
+export const agentEconomyConfigured = true;
