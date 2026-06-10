@@ -5,7 +5,6 @@ import { BellButton } from "./notification-center";
 
 const navItems = [
   ["Agents", "/app/agents"],
-  ["Skills", "/app/agents/skills"],
   ["Workbench", "/app/agent-workbench"],
   ["Missions", "/app/missions"],
   ["Compare", "/app/compare"],
