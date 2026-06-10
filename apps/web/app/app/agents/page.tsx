@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { PageHero } from "../../../components/chrome";
 import { curatedAgents } from "../../../lib/agent-engine";
 
@@ -6,6 +7,14 @@ export default function AgentsPage() {
   return (
     <>
       <PageHero title="Specialist Agents" eyebrow="Somnia runtime">Choose a purpose-built agent. Each one can run missions, use saved context, produce proof-backed outputs, and hand work to another specialist.</PageHero>
+      <Link href="/app/agents/skills" className="panel mb-5 flex items-center justify-between gap-4 rounded-2xl border border-cyan-300/25 bg-cyan-300/[0.04] p-5 transition hover:border-cyan-300/45">
+        <div>
+          <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-cyan-300"><Sparkles className="h-4 w-4" /> On-chain Agent Economy</p>
+          <h2 className="mt-2 text-xl font-semibold text-white">Run live skills powered by real Somnia validator inference</h2>
+          <p className="mt-1 text-sm text-white/55">One signature dispatches to the Agents Platform and resolves the result on-chain.</p>
+        </div>
+        <span className="shrink-0 rounded-xl bg-signal px-4 py-2 text-sm font-semibold text-black">Open Skills</span>
+      </Link>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {curatedAgents.map((agent) => (
           <article key={agent.id} className="panel rounded-2xl p-5">
