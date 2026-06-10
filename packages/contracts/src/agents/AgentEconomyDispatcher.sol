@@ -64,4 +64,27 @@ contract AgentEconomyDispatcher {
         if (msg.sender != owner) revert OnlyOwner();
         treasury = next;
     }
+
+    function dispatch(
+        uint256 agentId,
+        string calldata prompt,
+        bytes4 resolveSelector,
+        bytes calldata context,
+        address initiator
+    ) external payable returns (uint256 requestId) {
+        requestId = ISomniaAgentsPlatformMin(PLATFORM).createRequest{value: msg.value}(
+            address(this),
+            PlatformAdapter.CALLBACK_SELECTOR,
+            agentId,
+            prompt,
+            msg.value
+        );
+        pendingRequests[requestId] = Pending({
+            module:          msg.sender,
+            resolveSelector: resolveSelector,
+            context:         context,
+            initiator:       initiator
+        });
+        emit Dispatched(requestId, msg.sender, initiator, agentId);
+    }
 }
