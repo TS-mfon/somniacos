@@ -64,6 +64,7 @@ export const agentEconomyDispatcherAbi = [
 ] as const satisfies Abi;
 
 export const agentIdentityAbi = [
+  { type: "function", name: "protocolFee", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   {
     type: "function",
     name: "requestRegistration",
