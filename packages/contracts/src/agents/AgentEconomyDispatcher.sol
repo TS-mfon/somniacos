@@ -87,4 +87,26 @@ contract AgentEconomyDispatcher {
         });
         emit Dispatched(requestId, msg.sender, initiator, agentId);
     }
+
+    function handleAgentResponse(
+        uint256 requestId,
+        ISomniaAgentsPlatformMin.AgentResponse[] calldata responses,
+        uint8 status,
+        bytes calldata
+    ) external {
+        if (msg.sender != PLATFORM) revert OnlyPlatform();
+
+        Pending memory p = pendingRequests[requestId];
+        if (p.module == address(0)) return; // unknown — silent ignore, never revert
+
+        emit InferenceResult(requestId, p.module, status);
+
+        if (status == 2 && responses.length > 0) {
+            (bool ok, ) = p.module.call(
+                abi.encodeWithSelector(p.resolveSelector, requestId, responses[0].result, p.context)
+            );
+            if (!ok) emit ResolverFailed(requestId, p.module);
+        }
+        delete pendingRequests[requestId];
+    }
 }

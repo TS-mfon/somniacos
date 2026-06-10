@@ -53,4 +53,25 @@ contract DispatcherTest is Test {
         assertEq(initiator, user);
         assertEq(abi.decode(ctx, (string)), "ctx-1");
     }
+
+    function testHandleAgentResponseForwardsToModule() public {
+        vm.deal(user, 1 ether);
+        vm.prank(user);
+        uint256 requestId = module.fire{value: 0.05 ether}("hello", abi.encode("ctx-2"));
+
+        platform.deliver(requestId, "world");
+
+        assertEq(string(module.lastResult()), "world");
+        assertEq(abi.decode(module.lastContext(), (string)), "ctx-2");
+        // pending should be cleared
+        (address modAddr, , , ) = dispatcher.pendingRequests(requestId);
+        assertEq(modAddr, address(0));
+    }
+
+    function testHandleAgentResponseRejectsNonPlatform() public {
+        vm.prank(user);
+        vm.expectRevert(AgentEconomyDispatcher.OnlyPlatform.selector);
+        ISomniaAgentsPlatformMin.AgentResponse[] memory empty;
+        dispatcher.handleAgentResponse(0, empty, uint8(2), bytes(""));
+    }
 }
