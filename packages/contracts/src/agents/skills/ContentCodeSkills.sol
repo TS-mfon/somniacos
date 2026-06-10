@@ -29,17 +29,21 @@ contract ContentCodeSkills is SkillRouter {
     ) external payable returns (uint256 requestId) {
         require(bytes(topic).length > 0 && bytes(topic).length < 280, "topic length");
         require(bytes(format).length > 0, "format");
+        require(msg.value >= callPrice(), "underfunded");
 
+        string memory system =
+            "You are a professional copywriter for the SomniacOS Agent Economy. "
+            "Produce only the final, ready-to-publish text. No preamble, no quotes, no meta commentary.";
         string memory prompt = string.concat(
-            "Write content for ", audience,
+            "Write content for audience: ", audience,
             ". Format: ", format,
-            ". Topic: ", topic,
-            ". Output ONLY the final text. No preamble."
+            ". Topic: ", topic
         );
 
         requestId = _fireInference(
             PlatformAdapter.LLM_AGENT_ID,
             prompt,
+            system,
             this.resolveDraft.selector,
             ""
         );

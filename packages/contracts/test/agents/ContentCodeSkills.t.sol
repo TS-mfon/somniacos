@@ -17,15 +17,17 @@ contract ContentCodeSkillsTest is Test {
     function setUp() public {
         platform   = new FakePlatform();
         treasury   = new ProtocolTreasury(address(this));
-        dispatcher = new AgentEconomyDispatcher(address(platform), address(treasury));
+        dispatcher = new AgentEconomyDispatcher(address(platform), address(treasury), 3, 0.07 ether);
         skills     = new ContentCodeSkills(dispatcher, treasury, 0.01 ether);
     }
 
     function testDraftEmitsRequestAndResolves() public {
         vm.deal(user, 1 ether);
         vm.recordLogs();
+        // callPrice = 0.01 fee + 0.24 deposit = 0.25
+        assertEq(skills.callPrice(), 0.25 ether);
         vm.prank(user);
-        uint256 requestId = skills.draft{value: 0.06 ether}(
+        uint256 requestId = skills.draft{value: 0.25 ether}(
             "Tweet about Somnia winning",
             "X",
             "TWEET"

@@ -49,7 +49,7 @@ contract AgentIdentity {
     ) external payable returns (uint256 requestId) {
         require(bytes(name).length > 0 && bytes(name).length < 32, "name length");
         require(stake >= 0.1 ether, "min stake 0.1 STT");
-        require(msg.value >= stake + protocolFee, "underfunded");
+        require(msg.value >= stake + protocolFee + dispatcher.requiredDeposit(), "underfunded");
         bytes32 nameHash = keccak256(bytes(name));
         require(!takenNames[nameHash], "name taken");
         require(!agents[msg.sender].active, "already registered");
@@ -57,17 +57,19 @@ contract AgentIdentity {
         (bool paid, ) = address(treasury).call{value: protocolFee}("");
         require(paid, "treasury pay");
 
+        string memory system =
+            "You are the SomniacOS Agent Registry validator. Evaluate the agent registration. "
+            "Approve legitimate, well-described agents; deny spam, abuse, or impersonation. "
+            "Respond ONLY with 'APPROVE: <reason>' or 'DENY: <reason>'.";
         string memory prompt = string.concat(
-            "You are the SomniacOS Agent Registry validator. ",
-            "Evaluate this registration:\n",
             "Name: ", name, "\n",
-            "Description: ", description, "\n",
-            "Respond ONLY with 'APPROVE: reason' or 'DENY: reason'."
+            "Description: ", description
         );
         uint256 inferenceValue = msg.value - protocolFee - stake;
         requestId = dispatcher.dispatch{value: inferenceValue}(
             PlatformAdapter.LLM_AGENT_ID,
             prompt,
+            system,
             this.resolveRegistration.selector,
             "",
             msg.sender

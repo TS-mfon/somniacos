@@ -17,6 +17,7 @@ contract MockModule {
         return dispatcher.dispatch{value: msg.value}(
             PlatformAdapter.LLM_AGENT_ID,
             prompt,
+            "system",
             this.resolve.selector,
             ctx,
             msg.sender
@@ -38,14 +39,20 @@ contract DispatcherTest is Test {
 
     function setUp() public {
         platform   = new FakePlatform();
-        dispatcher = new AgentEconomyDispatcher(address(platform), address(0xDEAD));
+        // subcommitteeSize=3, llmPricePerAgent=0.07 — mirrors the live router.
+        dispatcher = new AgentEconomyDispatcher(address(platform), address(0xDEAD), 3, 0.07 ether);
         module     = new MockModule(dispatcher);
+    }
+
+    function testRequiredDeposit() public view {
+        // 0.03 platform deposit + 0.07 * 3 = 0.24
+        assertEq(dispatcher.requiredDeposit(), 0.24 ether);
     }
 
     function testDispatchStoresPending() public {
         vm.deal(user, 1 ether);
         vm.prank(user);
-        uint256 requestId = module.fire{value: 0.05 ether}("hello", abi.encode("ctx-1"));
+        uint256 requestId = module.fire{value: 0.24 ether}("hello", abi.encode("ctx-1"));
 
         (address modAddr, bytes4 sel, bytes memory ctx, address initiator) = dispatcher.pendingRequests(requestId);
         assertEq(modAddr, address(module));
@@ -57,7 +64,7 @@ contract DispatcherTest is Test {
     function testHandleAgentResponseForwardsToModule() public {
         vm.deal(user, 1 ether);
         vm.prank(user);
-        uint256 requestId = module.fire{value: 0.05 ether}("hello", abi.encode("ctx-2"));
+        uint256 requestId = module.fire{value: 0.24 ether}("hello", abi.encode("ctx-2"));
 
         platform.deliver(requestId, "world");
 
@@ -71,7 +78,8 @@ contract DispatcherTest is Test {
     function testHandleAgentResponseRejectsNonPlatform() public {
         vm.prank(user);
         vm.expectRevert(AgentEconomyDispatcher.OnlyPlatform.selector);
-        ISomniaAgentsPlatformMin.AgentResponse[] memory empty;
-        dispatcher.handleAgentResponse(0, empty, uint8(2), bytes(""));
+        AgentEconomyDispatcher.Response[] memory empty;
+        AgentEconomyDispatcher.Request memory req;
+        dispatcher.handleAgentResponse(0, empty, AgentEconomyDispatcher.ResponseStatus.Success, req);
     }
 }

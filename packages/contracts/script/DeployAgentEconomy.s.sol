@@ -9,6 +9,9 @@ import "../src/agents/core/AgentIdentity.sol";
 
 contract DeployAgentEconomy is Script {
     address constant PLATFORM = 0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776;
+    // Mirrors the live SomniacAgentRouterV2 economics.
+    uint256 constant SUBCOMMITTEE_SIZE = 3;
+    uint256 constant LLM_PRICE_PER_AGENT = 0.07 ether;
 
     function run() external {
         uint256 pk = vm.envUint("DEPLOYER_PK");
@@ -16,7 +19,9 @@ contract DeployAgentEconomy is Script {
         vm.startBroadcast(pk);
 
         ProtocolTreasury treasury = new ProtocolTreasury(deployer);
-        AgentEconomyDispatcher dispatcher = new AgentEconomyDispatcher(PLATFORM, address(treasury));
+        AgentEconomyDispatcher dispatcher = new AgentEconomyDispatcher(
+            PLATFORM, address(treasury), SUBCOMMITTEE_SIZE, LLM_PRICE_PER_AGENT
+        );
         ContentCodeSkills content = new ContentCodeSkills(dispatcher, treasury, 0.1 ether);
         AgentIdentity identity = new AgentIdentity(dispatcher, treasury, 0.1 ether);
 

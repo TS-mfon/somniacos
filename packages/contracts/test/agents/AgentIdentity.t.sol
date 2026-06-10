@@ -17,18 +17,18 @@ contract AgentIdentityTest is Test {
     function setUp() public {
         platform   = new FakePlatform();
         treasury   = new ProtocolTreasury(address(this));
-        dispatcher = new AgentEconomyDispatcher(address(platform), address(treasury));
+        dispatcher = new AgentEconomyDispatcher(address(platform), address(treasury), 3, 0.07 ether);
         identity   = new AgentIdentity(dispatcher, treasury, 0.01 ether);
     }
 
     function testRegistrationApproved() public {
-        vm.deal(agent, 1 ether);
+        vm.deal(agent, 2 ether);
         string[] memory caps = new string[](2);
         caps[0] = "research.web";
         caps[1] = "content.write";
 
         vm.prank(agent);
-        uint256 requestId = identity.requestRegistration{value: 0.5 ether}(
+        uint256 requestId = identity.requestRegistration{value: 0.7 ether}(
             "Atlas",
             "Research analyst",
             caps,
@@ -44,12 +44,12 @@ contract AgentIdentityTest is Test {
     }
 
     function testRegistrationDenied() public {
-        vm.deal(agent, 1 ether);
+        vm.deal(agent, 2 ether);
         string[] memory caps = new string[](1);
         caps[0] = "spam";
 
         vm.prank(agent);
-        uint256 requestId = identity.requestRegistration{value: 0.5 ether}(
+        uint256 requestId = identity.requestRegistration{value: 0.7 ether}(
             "SpamBot",
             "Spam",
             caps,

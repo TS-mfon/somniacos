@@ -10,7 +10,7 @@ abstract contract SkillRouter {
     AgentEconomyDispatcher public immutable dispatcher;
     ProtocolTreasury       public immutable treasury;
 
-    /// @notice Per-call protocol fee on top of platform's deposit, in wei.
+    /// @notice Per-call protocol fee on top of the platform deposit, in wei.
     uint256 public protocolFee;
 
     event ProtocolFeeUpdated(uint256 newFee);
@@ -21,13 +21,19 @@ abstract contract SkillRouter {
         protocolFee = initialFee;
     }
 
+    /// @notice Total STT a caller must forward to a skill: protocol fee + platform deposit.
+    function callPrice() public view returns (uint256) {
+        return protocolFee + dispatcher.requiredDeposit();
+    }
+
     function _fireInference(
         uint256 agentId,
         string memory prompt,
+        string memory system,
         bytes4 resolveSelector,
         bytes memory context
     ) internal returns (uint256 requestId) {
-        // Caller forwarded msg.value; we keep `protocolFee` and send the rest to the platform.
+        // Caller forwarded msg.value; keep `protocolFee`, send the rest to the platform.
         uint256 toPlatform = msg.value - protocolFee;
         // Pay treasury synchronously so failed inference still funds the protocol.
         (bool paid, ) = address(treasury).call{value: protocolFee}("");
@@ -35,6 +41,7 @@ abstract contract SkillRouter {
         requestId = dispatcher.dispatch{value: toPlatform}(
             agentId,
             prompt,
+            system,
             resolveSelector,
             context,
             msg.sender
