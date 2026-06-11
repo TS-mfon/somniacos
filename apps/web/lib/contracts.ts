@@ -1,17 +1,21 @@
-import { defineChain } from "viem";
+import { defineChain, fallback, http } from "viem";
 
 export const somnia = defineChain({
   id: 50312,
   name: "Somnia Shannon Testnet",
   nativeCurrency: { name: "STT", symbol: "STT", decimals: 18 },
   rpcUrls: {
-    default: { http: ["https://dream-rpc.somnia.network/"] },
-    public: { http: ["https://dream-rpc.somnia.network/"] }
+    default: { http: ["https://api.infra.testnet.somnia.network/", "https://dream-rpc.somnia.network/"] },
+    public: { http: ["https://api.infra.testnet.somnia.network/", "https://dream-rpc.somnia.network/"] }
   },
   blockExplorers: {
     default: { name: "Somnia Explorer", url: "https://shannon-explorer.somnia.network" }
   }
 });
+
+export function somniaTransport() {
+  return fallback(somnia.rpcUrls.default.http.map((url) => http(url)));
+}
 
 export const contracts = {
   AgentRegistry: "0x45119A32ca6C4d67424401dA92Abe4EC6c83f8Ce",

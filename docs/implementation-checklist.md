@@ -1,59 +1,35 @@
 # SomniacOS Acceptance Checklist
 
-This is the gate before any change is merged to `main` or deployed to production. Each line is a binary check.
+## Public Product
 
-## Product
+- [ ] `/`, `/app/agent-workbench`, Missions, Compare, Receipts, History, and curated Agents load.
+- [ ] `/economy` and every `/economy/*` route redirect to `/app/agent-workbench`.
+- [ ] No public navigation or landing-page control enters the disabled Agent Economy.
+- [ ] Compare waits directly for paid Somnia callbacks.
+- [ ] `/api/agents/run` returns `SOMNIA_TRANSACTION_REQUIRED` and performs no inference.
 
-- [ ] Landing page (`/`) loads and positions SomniacOS as the Autonomous Economy Layer.
-- [ ] Live proof card on the landing shows non-zero block number and non-zero event count from `/api/onchain/activity`.
-- [ ] `/app` redirects to `/app/agent-workbench`.
-- [ ] `/app/agent-workbench` is the only live agent runner; the Workbench can sign a transaction and render a callback result.
-- [ ] `/app/agents` enumerates `curatedAgents` and links each to a Workbench prefill.
-- [ ] `/app/revenue` shows `ProtocolFeeVault.totalCollected` formatted in STT.
-- [ ] All redirect stubs (see `docs/pages.md`) still resolve and redirect to `/app/agent-workbench`.
-- [ ] UI keeps the dark command-center palette; no emoji unless explicitly requested.
+## Error Handling
 
-## Onchain
+- [ ] Wallet rejection, locked wallet, wrong network, insufficient STT, gas estimation, nonce conflict, revert, RPC outage, missing proof, invalid URL, and delayed callback show a safe message and recovery action.
+- [ ] Pending callbacks tell the user not to pay again and remain recoverable from History or transaction hash.
+- [ ] Active API failures use the structured `AppError` envelope.
+- [ ] Receipt lookup distinguishes not-mined transactions from RPC failures.
 
-- [ ] Core economy contracts deployed on Somnia Shannon; addresses match `docs/contracts-deployed.md` and `apps/web/lib/contracts.ts`.
-- [ ] OS kernel deployed and wired: `ProcessManager.router() == SomniacAgentRouterV2`, `AutonomyPolicyRegistry.workflowCreator() == SomniacAgentRouterV2`, `MemoryLedger.processManager() == ProcessManager`.
-- [ ] `CapabilityRegistry.getCapabilityCount() == 8` after deploy seeding.
-- [ ] `ProtocolFeeVault.feeAmount() == 100000000000000000` (`0.1 STT`).
-- [ ] `ProtocolFeeVault.feeRecipient() == 0x5905c9Dea6Ae52AA0947D8F7F218263889eDfC4E`.
-- [ ] `SomniacAgentRouterV2.getTotalDue(0)` returns the expected `deposit + 0.1 STT` for LLM mode.
+## Somnia-Only Execution
 
-## Tests
+- [ ] LLM inference uses the Somnia Agents Platform.
+- [ ] Reference URLs use the Somnia Website agent.
+- [ ] No external model-provider or server inference path exists.
+- [ ] No direct application-server Website fetch exists.
 
-- [ ] `forge test` is green in `packages/contracts`.
-- [ ] `pnpm run typecheck` is green across the workspace.
-- [ ] `pnpm run build` is green for `apps/web`.
+## Verification
 
-## End-to-end
+- [ ] `forge test` passes.
+- [ ] `pnpm --filter @somniacos/web typecheck` passes.
+- [ ] `pnpm --filter @somniacos/web build` passes.
+- [ ] `git diff --check` passes.
+- [ ] Production alias serves the retained build and disabled routes redirect correctly.
 
-- [ ] From a Somnia-funded wallet, running an agent on `/app/agent-workbench` produces:
-  - A signed transaction submitted to `SomniacAgentRouterV2.launchWorkflowAgentRun`.
-  - A receipt visible via `/api/onchain/receipt`.
-  - An `OSAgentRunCompleted` event observed in `/api/onchain/activity`.
-  - A non-empty decoded result in the Anchored Results panel.
-- [ ] `/api/os/processes` returns at least one process from the direct contract path (`source: "contract"`).
-- [ ] `/api/os/revenue` returns `totalCollected > 0` and a `feeRecipient` matching the vault read.
+## Future Agentic Work
 
-## Deployment
-
-- [ ] `.env.example` lists every required key (frontend `NEXT_PUBLIC_*` + server-only secrets).
-- [ ] Vercel project has every `NEXT_PUBLIC_*` key plus `OPENAI_API_KEY` (when using OpenAI).
-- [ ] `vercel.json` targets `apps/web`.
-- [ ] Runtime + indexer are hosted on persistent infrastructure (not Vercel).
-- [ ] No `.env*`, private key, GitHub token, or Vercel token is committed.
-
-## Documentation
-
-- [ ] `README.md`, `docs/architecture.md`, `docs/contracts.md`, `docs/api.md`, `docs/os-workflow.md`, `docs/runtime.md`, `docs/development.md`, and `docs/deployment.md` accurately reflect the current code.
-- [ ] `docs/contracts-deployed.md` matches `apps/web/lib/contracts.ts`.
-- [ ] `AGENT.MD` handoff log notes the latest verified onchain reads.
-
-## Product rules (must not regress)
-
-- [ ] No fake economic state — every visible metric is derivable from contract state, decoded events, the connected wallet, or explicit user input.
-- [ ] No public server hot wallet for visitor-triggered transactions.
-- [ ] Seeded onchain history is real contract activity (`pnpm seed:onchain`), not synthetic UI data.
+- [ ] The Verifiable Work Network remains roadmap-only until funded jobs, evidence, Somnia verification, settlement, recovery, and withdrawals are verified live.

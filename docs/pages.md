@@ -1,9 +1,12 @@
 # Frontend Route Map
 
-The Next.js App Router project under `apps/web/app/` ships two surfaces:
+The Next.js App Router project under `apps/web/app/` ships three surfaces:
 
 1. The marketing landing at `/`.
 2. The application shell at `/app/*`.
+3. The independent Agent Economy shell at `/economy/*`.
+
+The Agent Economy owns identity, skills, work, Sentinel, Court, civilization history, activity, and protocol routes. Routes whose hardened contracts are not deployed show an explicit pending/read-only state and expose no unsafe legacy write.
 
 Historical routes that were removed during the OS-section consolidation are kept as `redirect()` stubs so previously-shared URLs do not 404.
 

@@ -48,7 +48,17 @@ export function LiveTicker() {
 }
 
 export function LiveMetrics() {
-  const { data, state } = useOnchainActivity(12000);
+  const { data, state, loading } = useOnchainActivity(12000);
+  if (loading) {
+    return <div role="status" className="mt-4 text-sm text-white/50">Loading verified Somnia metrics…</div>;
+  }
+  if (!data.ok) {
+    return (
+      <div role="status" className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/[0.05] p-3 text-sm leading-6 text-amber-100">
+        Live Somnia metrics are temporarily unavailable. No fallback counters are being shown.
+      </div>
+    );
+  }
   return (
     <div className="mt-4 grid grid-cols-2 gap-3">
       <Metric icon={<Bot />} label="Agents" value={String(state.agents.length)} />
@@ -78,7 +88,7 @@ export function LiveWorldFeed({ contract }: { contract?: string }) {
           </div>
         </article>
       ))}
-      {!loading && !items.length ? <EmptyState text="No matching real contract events yet. Use the transaction console or demo lab to create one." /> : null}
+      {!loading && !items.length ? <EmptyState text="No matching real contract events yet." /> : null}
     </div>
   );
 }
@@ -118,7 +128,7 @@ export function LiveOrganizationGrid() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {state.organizations.map((org) => (
-        <Link key={org.id} href={`/app/organizations/${org.id}`} className="panel rounded-3xl p-6 transition hover:-translate-y-1 hover:border-signal/40">
+        <Link key={org.id} href="/app/agent-workbench" className="panel rounded-3xl p-6 transition hover:-translate-y-1 hover:border-signal/40">
           <p className="text-xs uppercase tracking-[0.28em] text-signal">AI Company #{org.id}</p>
           <h3 className="mt-2 font-display text-4xl text-white">{org.name}</h3>
           <p className="mt-4 break-all text-white/60">{org.metadataURI}</p>

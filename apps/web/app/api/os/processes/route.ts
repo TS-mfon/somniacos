@@ -1,12 +1,13 @@
 import { getOnchainActivity } from "../../../../lib/server-onchain";
 import { buildOSProcesses, osAvailable } from "../../../../lib/os-state";
 import { getOSProcessesDirect } from "../../../../lib/server-os";
+import { appErrorResponse } from "../../../../lib/app-error";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const direct = await getOSProcessesDirect();
+    const direct = await getOSProcessesDirect().catch(() => []);
     if (direct.length) {
       return Response.json({
         ok: true,
@@ -23,6 +24,6 @@ export async function GET() {
       processes: buildOSProcesses(activity)
     });
   } catch (error) {
-    return Response.json({ ok: false, configured: osAvailable(), error: error instanceof Error ? error.message : "Failed to load OS processes", processes: [] }, { status: 500 });
+    return appErrorResponse(error);
   }
 }

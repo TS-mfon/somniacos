@@ -6,12 +6,14 @@ import { AlertTriangle, ArrowLeft, RefreshCw, ShieldAlert } from "lucide-react";
 type ErrorStateProps = {
   title: string;
   message: string;
+  code?: string;
+  recovery?: string;
   actionLabel?: string;
   onAction?: () => void;
   homeHref?: string;
 };
 
-export function ErrorState({ title, message, actionLabel = "Retry", onAction, homeHref = "/app" }: ErrorStateProps) {
+export function ErrorState({ title, message, code, recovery, actionLabel = "Retry", onAction, homeHref = "/app/agent-workbench" }: ErrorStateProps) {
   return (
     <main className="grid min-h-screen place-items-center bg-obsidian bg-radial-grid px-5 text-mercury">
       <section className="panel max-w-2xl rounded-[2rem] p-8 text-center">
@@ -21,6 +23,8 @@ export function ErrorState({ title, message, actionLabel = "Retry", onAction, ho
         <p className="mt-6 text-xs uppercase tracking-[0.4em] text-danger">System Guardrail</p>
         <h1 className="mt-3 font-display text-5xl text-white">{title}</h1>
         <p className="mt-4 text-base leading-7 text-white/62">{message}</p>
+        {recovery ? <p className="mt-3 text-sm leading-6 text-signal">{recovery}</p> : null}
+        {code ? <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.2em] text-white/30">Error code: {code}</p> : null}
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           {onAction ? (
             <button onClick={onAction} className="inline-flex items-center gap-2 rounded-full bg-signal px-5 py-3 font-semibold text-black">
@@ -30,7 +34,7 @@ export function ErrorState({ title, message, actionLabel = "Retry", onAction, ho
           ) : null}
           <Link href={homeHref} className="inline-flex items-center gap-2 rounded-full border border-white/12 px-5 py-3 text-white">
             <ArrowLeft className="h-4 w-4" />
-            Return to command center
+            Return to Workbench
           </Link>
         </div>
       </section>

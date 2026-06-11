@@ -228,8 +228,15 @@ export function BellButton() {
     function onDocClick(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
     }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
   function toggle() {
@@ -245,6 +252,8 @@ export function BellButton() {
       <button
         onClick={toggle}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-white/70 transition hover:border-signal/40 hover:text-signal"
       >
         <Bell className="h-4 w-4" />
@@ -255,7 +264,7 @@ export function BellButton() {
         ) : null}
       </button>
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-[92vw] max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c0c] shadow-2xl sm:w-[360px]">
+        <div role="dialog" aria-label="Notifications" className="absolute right-0 z-50 mt-2 w-[92vw] max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c0c] shadow-2xl sm:w-[360px]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-xs uppercase tracking-[0.2em] text-white/45">
             <span>Notifications</span>
             {items.length ? (
@@ -309,7 +318,7 @@ function InboxRow({ item, onDismiss, onView }: { item: NotificationItem; onDismi
           ) : null}
         </div>
       </div>
-      <button onClick={onDismiss} className="rounded-md p-1 text-white/30 opacity-0 transition group-hover:opacity-100 hover:bg-white/5 hover:text-white" aria-label="Clear">
+      <button onClick={onDismiss} className="rounded-md p-1 text-white/30 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/5 hover:text-white" aria-label="Clear">
         <X className="h-3.5 w-3.5" />
       </button>
     </div>

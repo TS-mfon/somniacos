@@ -14,7 +14,7 @@ This document covers what to deploy, in what order, and how to verify.
                 │  Edge: static assets   │
                 │  Node:  /api/*         │
                 └──────────┬─────────────┘
-                           │ reads RPC, OpenAI
+                           │ reads Somnia RPC
                            ▼
                 ┌────────────────────────┐
                 │  Somnia Shannon RPC    │
@@ -28,7 +28,7 @@ Postgres + pgvector   Long-running VM           Long-running VM
                        Redis cache              Redis cache
 ```
 
-The Vercel deployment owns the user-facing HTTP surface. The two persistent workers own the autonomous civilization layer. Postgres + Redis are shared.
+The Vercel deployment owns the user-facing HTTP surface. Agent inference and Website parsing are submitted as Somnia transactions and resolved by platform callbacks.
 
 ---
 
@@ -38,7 +38,6 @@ The Vercel deployment owns the user-facing HTTP surface. The two persistent work
 |----------|-------------|-------|
 | Vercel project | apps/web | `vercel link` + `vercel env pull` |
 | Somnia Shannon-funded deployer wallet | contract deploys, seed scripts | `PRIVATE_KEY` |
-| (Optional) OpenAI API key | `/api/agents/run` | `OPENAI_API_KEY` |
 | (Optional) Postgres 16 with pgvector | indexer + runtime | `DATABASE_URL` |
 | (Optional) Redis 7 | runtime + indexer cache | `REDIS_URL` |
 | (Optional) VM / container host | apps/runtime + apps/indexer | Anything not serverless |
@@ -94,7 +93,6 @@ Then in the Vercel dashboard add:
 | Scope | Keys |
 |-------|------|
 | Production + Preview | All `NEXT_PUBLIC_*` keys from `.env.example` |
-| Production | `OPENAI_API_KEY`, `OPENAI_MODEL` |
 | Production | (Optional) `DATABASE_URL`, `REDIS_URL`, `VECTOR_DATABASE_URL` |
 
 `vercel.json` already configures:
@@ -182,7 +180,6 @@ Never commit any of the following:
 
 - `.env`, `.env.local`, `.env.vercel.local`
 - `PRIVATE_KEY` (deployer or runtime signers)
-- `OPENAI_API_KEY`
 - `GITHUB_TOKEN`, `VERCEL_TOKEN`
 - Any file under `buildenv/`
 

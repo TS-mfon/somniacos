@@ -34,7 +34,7 @@ function TopBar() {
           <span className="grid h-9 w-9 place-items-center rounded-xl border border-signal/30 bg-signal/10"><Cpu className="h-4 w-4 text-signal" /></span>
           <span className="text-lg font-semibold tracking-tight text-white">SomniacOS</span>
         </Link>
-        <nav className="order-3 flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto">
+        <nav className="order-3 flex max-w-full w-full gap-1 overflow-x-auto sm:order-none sm:w-auto">
           {navItems.map(([label, href]) => (
             <Link key={href} href={href} className="rounded-lg px-3 py-2 text-sm text-white/58 transition hover:bg-white/[0.06] hover:text-white">
               {label}

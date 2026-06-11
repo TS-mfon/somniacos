@@ -1,149 +1,45 @@
 # SomniacOS Architecture
 
-This document is the technical reference for how SomniacOS components fit together. It is the file to read before changing any cross-cutting behavior.
+SomniacOS currently exposes the established Human build under `/app/*`. The separate Agent Economy interface is disabled; `/economy/*` redirects to `/app/agent-workbench`. Its contract source and deployment history remain in the repository for future work.
 
-## 1. Goals and Non-Goals
+## Trust Boundaries
 
-**Goals**
+| Component | Responsibility |
+|-----------|----------------|
+| Browser and wallet | Collect input, sign transactions, display receipts and callback results |
+| Next.js on Vercel | Render pages and perform read-only Somnia RPC queries |
+| Somnia Shannon | Store requests, proofs, process state, and callback results |
+| Somnia Agents Platform | Perform LLM inference or Website parsing and call the authenticated contract callback |
 
-- Make every visitor-visible piece of state provably derivable from Somnia Shannon Testnet (chain id `50312`) — events, transaction receipts, contract reads, or the connected wallet.
-- Run a one-transaction onboarding for autonomous agent work: a single wallet signature creates a policy, creates a process, pays the protocol fee, deposits the Somnia Agents fee, and queues the agent request.
-- Keep the Vercel frontend stateless. All persistent state lives onchain, in Postgres, or in the user's wallet/local storage.
+The server does not perform inference, fetch user reference URLs, or sign visitor transactions.
 
-**Non-goals**
+## Workbench Lifecycle
 
-- Custodial wallets. There is no server hot wallet for visitor-triggered transactions.
-- Off-chain agent revenue accounting. All fees route through `ProtocolFeeVault` and `Treasury` contracts.
-- Synchronous LLM responses on the chain. Everything routed through Somnia Agents is asynchronous and proven by callback.
+1. The user chooses a curated agent, task, constraints, and optional Website reference URL.
+2. The browser validates the input, quotes the exact router deposit, checks wallet state, and asks for a Somnia Shannon signature.
+3. The router creates the process and request, then forwards the appropriate payload to the Somnia Agents Platform.
+4. The UI waits for the receipt and polls the deployed router for the authenticated callback result.
+5. The result and proof are saved to browser history. A delayed callback remains recoverable by transaction hash without paying again.
 
-## 2. Process Boundary Map
+Compare follows the same lifecycle for two or three paid requests in parallel. It does not call a server inference endpoint.
 
-| Process | Hosting | Lifetime | Trust boundary |
-|---------|---------|----------|----------------|
-| `apps/web` (Next.js 15) | Vercel serverless | per-request | Public; server routes use server-only env vars (`OPENAI_API_KEY`) and a server `viem` `publicClient`. |
-| Somnia Shannon node | `https://dream-rpc.somnia.network/` | persistent | Public; no auth required for reads. |
-| Somnia Agents platform | `0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776` | persistent | Trusted callback origin — `SomniacAgentRouter*` checks `msg.sender == platform`. |
-| LLM provider | `api.openai.com` (preferred), `text.pollinations.ai` (fallback) | per-request | Out-of-protocol; results are not anchored automatically. |
-| `apps/runtime` | external persistent host (planned) | always-on | Optional; emits world events. |
-| `apps/indexer` | external persistent host (planned) | always-on | Optional; writes `indexed_contract_events`. |
-| Postgres + pgvector | external persistent host (planned) | always-on | Optional. Schema: `packages/db/schema.sql`. |
+## Callback Security
 
-Vercel was chosen for the frontend specifically because serverless suits the request/response surface. The runtime + indexer are kept out because they need persistent connections and would silently die on serverless cold-start boundaries.
+The router accepts callback resolution only from the Somnia Agents Platform. Pending request state is deleted before downstream resolution, preventing duplicate callback processing. Failures and timeouts are persisted as recoverable states rather than triggering direct transfers.
 
-## 3. Request Lifecycles
+## Error Handling
 
-### 3.1 Workbench agent run (visitor golden path)
+User-facing errors are normalized into a stable code, safe message, recovery action, and retryability flag. Important cases include wallet rejection, wrong network, insufficient STT, pending nonce conflicts, gas estimation failures, RPC outages, reverted transactions, missing proof events, and delayed callbacks.
 
-```
-Browser                       Wallet                Somnia Shannon                 Somnia Agents              LLM provider
-   │                            │                         │                              │                          │
-   │  Pick agent + fill task    │                         │                              │                          │
-   │  POST /api/agents/run      │                         │                              │                          │
-   │ ─────────────────────────────────────────────────────│                              │                          │
-   │  (server LLM result)                                 │                              │  fetch system+user       │
-   │ <─────────────────────────────────────────────────── │ ─────────────────────────────────────────────────────── │
-   │  Sign launchWorkflowAgentRun                         │                              │                          │
-   │ ─────────────────────────▶│ eth_sendTransaction ────▶│ createPolicy / createProcess │                          │
-   │                            │                         │ payFee 0.1 STT               │                          │
-   │                            │                         │ platform.createRequest ─────▶│ schedule subcommittee    │
-   │                            │                         │ registerStep                 │                          │
-   │                            │                         │ OSAgentRunRequested event ──▶│                          │
-   │  poll receipt + tail logs  │                         │                              │                          │
-   │ ◀───────────────────────── │                         │                              │                          │
-   │                            │                         │ handleResponse (cb) ◀────────│ subcommittee finishes    │
-   │                            │                         │ completeStepFromRouter       │                          │
-   │                            │                         │ OSAgentRunCompleted event    │                          │
-   │  Anchored result render    │                         │                              │                          │
-```
+Callbacks can be recovered from History or by transaction hash. Users are explicitly told not to repay while an existing request is pending.
 
-Notes:
+## State And Provenance
 
-- `/api/agents/run` runs concurrently with the wallet signature. The UI shows the LLM result immediately and replaces it with the onchain callback result once `OSAgentRunCompleted` is observed.
-- The router refunds excess `msg.value` to the caller after taking `deposit + protocolFee` (see `SomniacAgentRouterV2.launchWorkflowAgentRun`).
-- Gas is explicitly estimated client-side and submitted with a buffer to avoid the "Gas limit too low" wallet error.
+- Live economic facts come from contract reads, decoded events, receipts, connected wallet state, or explicit user input.
+- Local storage contains user context, run history, and proof receipt references only.
+- Server API routes are read-only.
+- Fixture endpoints are labeled and are not shown as live economic state.
 
-### 3.2 Server-only contract reads
+## Disabled Agent Economy
 
-`apps/web/lib/server-onchain.ts` instantiates a viem `publicClient` against `SOMNIA_RPC_URL || NEXT_PUBLIC_RPC_URL`. It decodes a known list of events (`AgentCreated`, `OrganizationCreated`, `TaskPosted`, `AgentRunCompleted`, `OSAgentRunCompleted`, `ProtocolFeePaid`, etc.) for `/api/onchain/activity` and `/api/os/*`.
-
-`apps/web/lib/server-os.ts` additionally performs direct contract reads (`ProcessManager.processes(id)`, `ProcessManager.steps(processId, stepId)`, `ProtocolFeeVault.totalCollected`) so the OS surfaces remain correct even after the event log window scrolls past recent activity. The OS endpoints emit a `source: "contract" | "events" | "defaults"` field so the UI can show provenance.
-
-### 3.3 Agent callback path (security-critical)
-
-`SomniacAgentRouterV2.handleResponse(uint256 requestId, Response[] responses, ResponseStatus status, Request)` is the only entry point that mutates step completion:
-
-1. `require(msg.sender == address(platform), "only platform");`
-2. `require(pendingRequests[requestId], "unknown request");`
-3. `delete pendingRequests[requestId];` — single-shot.
-4. Decode `responses[0].result` as `string` if non-empty; otherwise classify as `TimedOut` or `Failed`.
-5. Call `processManager.completeStepFromRouter(requestId, status, result)` — which itself is gated by `onlyRouter`.
-
-This narrow path is what guarantees that `Step.result` reflects subcommittee output and cannot be spoofed by a third party.
-
-## 4. Data Flow Inventory
-
-| Source of truth | Consumer | Mechanism |
-|-----------------|----------|-----------|
-| Somnia contract state | `apps/web` server routes | viem `publicClient.readContract` |
-| Somnia contract events | `apps/web` UI + indexer | `getLogs` with topic filters; decoded via ABIs in `apps/web/lib/contracts.ts` |
-| Connected wallet | `apps/web` client components | viem injected transport, signs with the user's wallet |
-| Browser local storage | Workbench memory + run history | `agent-engine.ts` exports `AgentMemory` & `AgentRunRecord` shapes |
-| Postgres | future indexer | `packages/db/schema.sql` |
-| LLM provider | `/api/agents/run` | OpenAI Responses API; falls back to Pollinations text endpoint |
-
-## 5. Provenance Discipline
-
-Every UI label that asserts an economic fact must reference one of: (a) a deployed contract address, (b) a decoded event topic, (c) the connected wallet's own state, or (d) explicit user input. The Workbench tags each rendered result with a `source` provenance value (`"Somnia"`, `"LLM API"`, or `"SomniacOS Local"`), which is preserved in local run history and surfaced as a proof badge.
-
-## 6. Failure Modes and Fallbacks
-
-| Failure | Detection | Fallback |
-|---------|-----------|----------|
-| OpenAI down / no key | non-2xx or missing env | Pollinations text endpoint (`text.pollinations.ai`) — `source` becomes `"LLM API"` with `provider: "pollinations"`. |
-| Both LLM providers down | timeout / non-2xx | Deterministic local responder (`buildLocalAgentOutput`) — `source` becomes `"SomniacOS Local"`. |
-| Somnia RPC timeout | viem throws | Server route returns 500 with structured error; UI surfaces "Anchored results may be delayed". |
-| Recent event window has scrolled past the process | `getLogs` returns 0 | `getOSProcessDirect` falls back to `ProcessManager.processes(id)` + `ProcessManager.steps(id, stepId)` reads. |
-| Wallet rejects signature | viem `UserRejectedRequestError` | UI surfaces a recoverable error, leaves the form populated. |
-| Insufficient STT | viem revert | UI prompts the user to fund the wallet from the Shannon faucet. |
-| Subcommittee timeout | `ResponseStatus.TimedOut` | Router writes `"Somnia Agent request timed out before validators reached a result."` into `Step.result`; UI surfaces it. |
-
-## 7. Frontend Composition
-
-The dApp is a Next.js 15 App Router project under `apps/web/app/`:
-
-- `app/page.tsx` — landing page (server component) with a `<LiveMetrics />` island.
-- `app/layout.tsx` — global shell with the dark "command center" theme defined in `apps/web/app/globals.css` (signal-cyan accent on charcoal `#131313`).
-- `app/app/` — application shell.
-  - `app/app/agent-workbench/page.tsx` — mounts `<AgentWorkbench />` (`apps/web/components/agent-workbench.tsx`). The Workbench is the single live agent runner. It holds local mission history in `localStorage`.
-  - `app/app/agents/page.tsx` — server-rendered catalog from `lib/agent-engine.ts` (`curatedAgents`).
-  - `app/app/revenue/page.tsx` — server-renders `ProtocolFeeVault` totals.
-  - All other `/app/*` pages are intentional `redirect()` stubs to `/app/agent-workbench`. They exist so previous shared URLs continue to resolve.
-- `app/api/*` — Edge-incompatible Node runtime routes (`export const runtime = "nodejs"`).
-
-## 8. Concurrency and Idempotency
-
-- `requestId` is unique per `platform.createRequest` call. `pendingRequests[requestId]` is true between request and callback, and is `delete`'d in `handleResponse`, making callback handling single-shot.
-- `Process.status` advances `Created → WaitingForCallback → Running → Completed | Failed | Cancelled`. `registerStep` only runs while status is `Created`, `Running`, or `WaitingForCallback`, and `completeProcess` requires `Running` or `WaitingForCallback`.
-- `process.spent` is incremented atomically with `process.stepCount` inside `registerStep`, then checked against `policy.maxSpend` / `policy.maxSteps` before the call returns.
-
-## 9. Extension Points
-
-- **New capability** — call `CapabilityRegistry.registerCapability(bytes32 id, string label, string description, uint8 mode, uint256 somniaAgentId, string schemaURI)` from the owner key, then add it to `defaultCapabilities` in `apps/web/lib/os-state.ts` for offline UI fallback.
-- **New curated agent** — append a `CuratedAgent` to `apps/web/lib/agent-engine.ts`. The Workbench picks it up automatically; the seeded handoff graph is keyed by `id`.
-- **New event in the activity feed** — add an entry to `apps/web/lib/server-onchain.ts`'s `eventConfigs` array (contract address, ABI fragment, decoder).
-- **New OS contract** — extend `osContracts` in `apps/web/lib/contracts.ts`, plus the corresponding `*Abi` constant, and append to `osContractCatalog`.
-
-## 10. Coordinate System
-
-| Identifier | Type | Where it is produced |
-|------------|------|----------------------|
-| `processId` | `uint256` (1-indexed) | `ProcessManager.createProcess` / `createProcessFor` |
-| `stepId` | `uint256` (1-indexed per process) | `ProcessManager.registerStep` |
-| `policyId` | `uint256` (1-indexed) | `AutonomyPolicyRegistry.createPolicy` / `createPolicyFor` |
-| `requestId` | `uint256` | Somnia Agents platform (`ISomniaAgentPlatformV2.createRequest`) |
-| `capabilityId` | `bytes32` | `keccak256(name)` by convention (see `scripts/deploy-os-kernel.ts`) |
-| `appAgentId` | `string` | The curated agent's `id` field (`marketing-strategist`, `content-writer`, …) |
-| `somniaAgentId` | `uint256` | Hard-coded LLM / Website / JSON agent ids on the Somnia Agents platform |
-| `eventId` | `bytes32` | `keccak256(payload)` by convention when writing to `WorldEventRegistry` |
-
-Cross-referencing these identifiers is how the frontend reconstructs a complete proof trail from a single onchain process.
+The modular Agent Economy contracts and source are retained, but their separate frontend is not a public product surface. Re-enabling it requires full live-flow verification, callback recovery, pull-payment accounting, authorization checks, and production-quality error handling.
