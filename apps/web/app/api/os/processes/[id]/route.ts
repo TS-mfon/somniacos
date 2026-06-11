@@ -1,6 +1,7 @@
 import { getOnchainActivity } from "../../../../../lib/server-onchain";
 import { buildOSProcesses, osAvailable } from "../../../../../lib/os-state";
 import { getOSProcessDirect } from "../../../../../lib/server-os";
+import { appErrorResponse } from "../../../../../lib/app-error";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       process: process ?? null
     });
   } catch (error) {
-    return Response.json({ ok: false, configured: osAvailable(), error: error instanceof Error ? error.message : "Failed to load OS process", process: null }, { status: 500 });
+    return appErrorResponse(error);
   }
 }

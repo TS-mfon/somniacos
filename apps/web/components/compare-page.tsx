@@ -2,15 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink, GitCompare, Loader2, Play, WalletCards } from "lucide-react";
-import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, http, keccak256, parseEther, toHex, type Address, type Hash } from "viem";
+import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, keccak256, parseEther, toHex, type Address, type Hash } from "viem";
 import { buildAgentHandoffs, buildNextActions, defaultMemory, outputFormats, readableAgentLabel, regularWorkbenchAgents, scoreAgentRun, type AgentMemory, type AgentRunRecord, type CompareSession, type CuratedAgent, type OutputFormat } from "../lib/agent-engine";
 import { loadCompareSessions, upsertCompareSession, upsertRunHistory } from "../lib/history-store";
 import { bufferedGas, detectWalletKind, estimateGasFees, pickPricingForWallet, pricingArgs } from "../lib/somnia-gas";
-import { osContracts, osKernelConfigured, osKernelEnabled, somnia, somniacAgentRouterV2Abi } from "../lib/contracts";
+import { osContracts, osKernelConfigured, osKernelEnabled, somnia, somniaTransport, somniacAgentRouterV2Abi } from "../lib/contracts";
 import { summarizeError } from "../lib/onchain-state";
 import { useSomniaWallet } from "./wallet-button";
 
-const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
+const publicClient = createPublicClient({ chain: somnia, transport: somniaTransport() });
 const routerConfigured = osKernelEnabled && osKernelConfigured;
 
 const statusLabels: Record<number, AgentRunRecord["status"]> = {
@@ -181,8 +181,8 @@ export function ComparePage() {
         setRuns((current) => current.map((run) => run.appAgentId === agent.id ? onchainPending : run));
       }
 
-      setTxStatus("All compare payments are confirmed. Running selected agents in parallel with strict live-provider mode.");
-      const completed = await Promise.all(paidRequests.map((request) => executeStrictCompareAgent(request)));
+      setTxStatus("All compare payments are confirmed. Waiting for Somnia validator callbacks in parallel.");
+      const completed = await Promise.all(paidRequests.map((request) => waitForCompareCallback(request)));
       setRuns(completed);
       completed.forEach((run) => upsertRunHistory(run));
       const session: CompareSession = {
@@ -267,45 +267,15 @@ export function ComparePage() {
     return { agent, requestId, hash, account };
   }
 
-  async function executeStrictCompareAgent({ agent, requestId, hash, account }: PaidCompareRequest): Promise<AgentRunRecord> {
-    try {
-      const response = await fetch("/api/agents/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agentId: agent.id,
-          task,
-          constraints,
-          outputFormat,
-          memory,
-          requestId,
-          txHash: hash,
-          missionId: "compare-paid",
-          executionMode: "strict"
-        })
-      });
-      const payload = await response.json() as { result?: string; source?: AgentRunRecord["source"]; outputFormat?: OutputFormat; providerError?: string; error?: string };
-      if (response.ok && payload.result) {
-        const base = buildCompareRun({
-          agentId: agent.id,
-          requestId,
-          status: "Success",
-          result: payload.result,
-          source: payload.source ?? "LLM API",
-          account,
-          txHash: hash,
-          format: payload.outputFormat ?? outputFormat,
-          memoryNote: payload.providerError ? `Provider warning: ${payload.providerError}` : ""
-        });
-        return { ...base, confidence: scoreAgentRun(base) };
-      }
-      const callbackRun = await waitForRun(requestId, hash, account, agent.id, payload.error ?? "Live agent provider did not return a result.");
-      return { ...callbackRun, confidence: scoreAgentRun(callbackRun) };
-    } catch (err) {
-      const fallbackMessage = err instanceof Error ? err.message : "Live agent comparison failed.";
-      const callbackRun = await waitForRun(requestId, hash, account, agent.id, fallbackMessage);
-      return { ...callbackRun, confidence: scoreAgentRun(callbackRun) };
-    }
+  async function waitForCompareCallback({ agent, requestId, hash, account }: PaidCompareRequest): Promise<AgentRunRecord> {
+    const callbackRun = await waitForRun(
+      requestId,
+      hash,
+      account,
+      agent.id,
+      "Somnia validators did not return a usable result."
+    );
+    return { ...callbackRun, confidence: scoreAgentRun(callbackRun) };
   }
 
   function buildCompareRun({
@@ -548,4 +518,3 @@ async function waitForRun(requestId: string, txHash: Hash, account: Address, fal
   };
   return failed;
 }
-

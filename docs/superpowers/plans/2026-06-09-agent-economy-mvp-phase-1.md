@@ -1,5 +1,7 @@
 # Agent Economy MVP — Implementation Plan (Phase 0 + 1 of 5)
 
+> Historical predecessor. The active source of truth is the [2026-06-11 full-build master plan](./2026-06-11-agent-economy-full-build-master.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 > **Save location after plan mode exits:** `docs/superpowers/plans/2026-06-09-agent-economy-mvp-phase-1.md`. Companion brainstorm spec is in this same file's prior revision and should be saved at `docs/superpowers/specs/2026-06-09-agent-economy-v3-design.md`.

@@ -198,7 +198,7 @@ export const docsSections: DocsSection[] = [
         heading: "Key implementation pieces",
         paragraphs: [
           "The web app lives in `apps/web`. Agent definitions, missions, confidence scoring, and receipt types live in `apps/web/lib/agent-engine.ts`. Local history, proof receipts, mission receipts, and compare sessions are managed by `apps/web/lib/history-store.ts`.",
-          "The agent API is `/api/agents/run`. It accepts agent id, task, constraints, URLs, mission id, output format, memory, request id, and transaction hash. It is strict by default and never returns deterministic mock output. Workbench and Missions treat the paid Somnia Agent callback as the authoritative result."
+          "`/api/agents/run` is a compatibility endpoint that requires a wallet-signed Somnia transaction. Workbench and Missions submit through the deployed router and treat the authenticated Somnia callback as the authoritative result."
         ],
         bullets: [
           "Somnia Shannon chain ID: 50312.",

@@ -6,13 +6,12 @@ import {
   createWalletClient,
   encodeFunctionData,
   formatEther,
-  http,
   parseAbiItem,
   parseEther,
   type Address,
 } from "viem";
 import { BadgeCheck, Bot, Loader2, ShieldAlert, Wallet } from "lucide-react";
-import { somnia } from "../../lib/contracts";
+import { somnia, somniaTransport } from "../../lib/contracts";
 import {
   bufferedGas,
   detectWalletKind,
@@ -26,7 +25,7 @@ import { useNotifications } from "../notification-center";
 import { agentEconomyContracts } from "../../lib/agents/contracts";
 import { agentEconomyDispatcherAbi, agentIdentityAbi } from "../../lib/agents/dispatcher";
 
-const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
+const publicClient = createPublicClient({ chain: somnia, transport: somniaTransport() });
 
 const registrationDeniedEvent = parseAbiItem("event RegistrationDenied(address indexed agent, string reason)");
 
@@ -47,7 +46,7 @@ const agentsGetterAbi = [
   },
 ] as const;
 
-type Phase = "idle" | "wallet" | "signature" | "pending" | "approved" | "denied" | "error";
+type Phase = "idle" | "wallet" | "signature" | "pending" | "approved" | "denied" | "recoverable" | "error";
 
 export function RegisterClient() {
   const { wallet, connect, switchToSomnia, walletClient, refresh } = useSomniaWallet();
@@ -154,16 +153,21 @@ export function RegisterClient() {
 
       const decision = await waitForDecision(account, () => setElapsed((value) => value + 4));
       void refresh();
-      if (decision.approved) {
+      if (decision.status === "approved") {
         setPhase("approved");
         setStatus("Approved on-chain.");
         setMessage(`Welcome, ${decision.name || name.trim()}. Your agent is registered and active with ${formatEther(stakeWei)} STT staked.`);
         notify.push({ kind: "result", title: "Agent approved", body: `${decision.name || name.trim()} is now active on Somnia.` });
-      } else {
+      } else if (decision.status === "denied") {
         setPhase("denied");
         setStatus("Not approved.");
         setMessage("The validator did not approve this registration. Your stake has been refunded on-chain.");
         notify.push({ kind: "info", title: "Registration not approved", body: "Stake refunded. Try a clearer name and description." });
+      } else {
+        setPhase("recoverable");
+        setStatus("Callback still pending.");
+        setMessage("No approval or denial was observed before the wait window ended. The registration may still resolve on-chain; this UI cannot confirm that your stake was refunded.");
+        notify.push({ kind: "info", title: "Registration callback still pending", body: "No final on-chain decision was observed. Check the explorer before retrying." });
       }
     } catch (caught) {
       const text = caught instanceof Error ? caught.message : "Registration failed.";
@@ -175,19 +179,19 @@ export function RegisterClient() {
 
   // Poll the profile: active flips true on approval. If it stays inactive past the window,
   // the validator denied it and refunded the stake (no profile written).
-  async function waitForDecision(account: Address, tick: () => void): Promise<{ approved: boolean; name: string }> {
+  async function waitForDecision(account: Address, tick: () => void): Promise<{ status: "approved" | "denied" | "timed-out"; name: string }> {
     const timeoutMs = 180_000;
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const profile = (await publicClient.readContract({ address: agentEconomyContracts.AgentIdentity, abi: agentsGetterAbi, functionName: "agents", args: [account] })) as [string, string, bigint, bigint, bigint, boolean];
-      if (profile[5]) return { approved: true, name: profile[0] };
+      if (profile[5]) return { status: "approved", name: profile[0] };
       tick();
       await new Promise((resolve) => setTimeout(resolve, 4000));
       // A denial leaves no profile; detect it via the RegistrationDenied event for this agent.
       const denied = await findDenied(account);
-      if (denied) return { approved: false, name: "" };
+      if (denied) return { status: "denied", name: "" };
     }
-    return { approved: false, name: "" };
+    return { status: "timed-out", name: "" };
   }
 
   async function findDenied(account: Address): Promise<boolean> {
@@ -247,7 +251,7 @@ export function RegisterClient() {
         ) : null}
 
         {message ? (
-          <div className={`mt-5 flex items-start gap-3 rounded-2xl border p-4 text-sm leading-6 ${phase === "approved" ? "border-cyan-300/30 bg-cyan-300/[0.05] text-cyan-100" : phase === "denied" ? "border-amber-300/30 bg-amber-300/[0.05] text-amber-100" : "border-red-400/30 bg-red-400/5 text-red-200"}`}>
+          <div className={`mt-5 flex items-start gap-3 rounded-2xl border p-4 text-sm leading-6 ${phase === "approved" ? "border-cyan-300/30 bg-cyan-300/[0.05] text-cyan-100" : phase === "denied" || phase === "recoverable" ? "border-amber-300/30 bg-amber-300/[0.05] text-amber-100" : "border-red-400/30 bg-red-400/5 text-red-200"}`}>
             {phase === "approved" ? <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-cyan-300" /> : <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />}
             <span>{message}</span>
           </div>

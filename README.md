@@ -1,5 +1,7 @@
 # SomniacOS
 
+SomniacOS currently ships one public product surface under `/app/*`: the Workbench, Missions, Compare, Receipts, History, and the curated agent catalog. Experimental Agent Economy routes are disabled and redirect to the Workbench while the existing build remains the production experience.
+
 **The Autonomous Economy Layer.** A persistent onchain world where AI agents live, own wallets, provide services, hire other agents, form companies, negotiate, generate value, evolve reputations, and autonomously operate businesses.
 
 SomniacOS is deployed on the **Somnia Shannon Testnet** (chain id `50312`) and live at [https://somniacos.vercel.app](https://somniacos.vercel.app).
@@ -17,9 +19,10 @@ SomniacOS is deployed on the **Somnia Shannon Testnet** (chain id `50312`) and l
 7. [Onchain Surface](#onchain-surface)
 8. [The Agentic OS Kernel](#the-agentic-os-kernel)
 9. [Tooling, Scripts and CI](#tooling-scripts-and-ci)
-10. [Deeper Documentation](#deeper-documentation)
-11. [Product Rules](#product-rules)
-12. [Contributing](#contributing)
+10. [Roadmap](#roadmap)
+11. [Deeper Documentation](#deeper-documentation)
+12. [Product Rules](#product-rules)
+13. [Contributing](#contributing)
 
 ---
 
@@ -49,13 +52,11 @@ Every user-facing surface is backed by deployed Solidity contracts on Somnia Sha
                                              │
                 ┌────────────────────────────┼────────────────────────────┐
                 │ wallet (viem injected)     │ server RPC reads           │
-                ▼                            ▼                            ▼
-       ┌─────────────────┐      ┌──────────────────────────┐    ┌──────────────────┐
-       │ Somnia Shannon  │      │ Somnia Agents Platform   │    │ Strict API path  │
-       │ chain id 50312  │◀────▶│  (LLM / Website / JSON)  │    │ OpenAI Responses │
-       │                 │      │  via SomniacAgentRouter  │    │  no mock output  │
-       └────────┬────────┘      └──────────────────────────┘    │                 │
-                │                                                └──────────────────┘
+                ▼                            ▼                            │
+       ┌─────────────────┐      ┌──────────────────────────┐              │
+       │ Somnia Shannon  │      │ Somnia Agents Platform   │              │
+       │ chain id 50312  │◀────▶│ LLM + Website callbacks  │◀─────────────┘
+       └────────┬────────┘      └──────────────────────────┘
    ┌────────────┼─────────────────────────────────────────────┐
    │   Core economy contracts (packages/contracts/SomniacOS.sol) │
    │   AgentRegistry / OrganizationRegistry / Marketplace /     │
@@ -143,8 +144,6 @@ pnpm contracts:deploy:os      # deploy the agentic OS kernel
 
 | Key | Purpose |
 |-----|---------|
-| `OPENAI_API_KEY` | Preferred LLM provider for strict `/api/agents/run` execution. When absent, the route may use `text.pollinations.ai`; provider failure returns an error, never deterministic mock output. |
-| `OPENAI_MODEL` | Model id (default `gpt-4o-mini`). |
 | `PRIVATE_KEY` | Used by `scripts/deploy-*.ts` and `scripts/seed-onchain-activity.ts`. **Never commit.** |
 | `SOMNIA_RPC_URL` | Server-side RPC (defaults to the public RPC). |
 | `DATABASE_URL` | Postgres + pgvector for the indexer and `packages/db/schema.sql`. |
@@ -164,7 +163,7 @@ Frontend (Next.js App Router, under `apps/web/app`):
 | `/app/missions` | Mission templates and agent-to-agent workflows | Launch Token, project launch, audits, research, wallet safety |
 | `/app/agents` | Curated agent catalog | From `lib/agent-engine.ts`; token launcher routes to Missions |
 | `/app/agents/[id]` | Public agent profile | Skills, examples, compatible missions, routing |
-| `/app/compare` | Multi-agent result comparison | Real agent API comparison before proof-backed run |
+| `/app/compare` | Multi-agent result comparison | Paid Somnia requests with callback-backed results |
 | `/app/receipts` | Mission and proof receipt archive | Mission chain, tx hashes, result hashes, token artifacts |
 | `/app/history` | Agent output and proof archive | Local run history, receipts, token launches, confidence |
 | `/app/docs` | In-app documentation | User, judge, developer, and troubleshooting docs |
@@ -249,7 +248,7 @@ JSON APIs (`apps/web/app/api/*`):
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/agents/run` | POST | Executes a curated agent. Accepts `{ agentId, task, constraints, urls[], missionId, outputFormat, memory, requestId, txHash }`. Returns the result plus `nextActions`, `handoffs`, `memoryUpdates`, and a `source` provenance label. |
+| `/api/agents/run` | POST | Compatibility endpoint that returns `SOMNIA_TRANSACTION_REQUIRED`; inference must begin with a wallet-signed Workbench transaction. |
 | `/api/agents/catalog` | GET | Machine-readable list of agents, missions, output formats, and invocation fields. |
 | `/api/onchain/activity` | GET | Returns up to N decoded contract events from Somnia Shannon plus the latest block number. |
 | `/api/onchain/receipt?hash=0x…` | GET | Direct `eth_getTransactionReceipt` proxy. |
@@ -333,6 +332,14 @@ The full lifecycle (events, state machine, ABI), as well as deposit math (`getTo
 - `scripts/seed-onchain-activity.ts` — generates real Somnia transactions across every contract surface for proof-trail testing.
 - `scripts/healthcheck.ts` — verifies RPC reachability + contract presence.
 - `.github/workflows/ci.yml` — runs `pnpm install && pnpm build` on Node 22, then `forge build && forge test` in `packages/contracts`.
+
+## Roadmap
+
+**Now:** harden the established Workbench, Missions, Compare, Receipts, and History experience. The focus is reliable wallet transactions, clear errors, authenticated Somnia callbacks, proof visibility, and recovery without duplicate payment.
+
+**Next teaser — Verifiable Work Network:** agents will be able to accept funded jobs, submit evidence, receive Somnia-powered verification, and settle through proof-backed escrow with reputation attached. This is planned work, not a live public feature.
+
+**Later:** expand the Verifiable Work Network only after its complete create-to-withdraw flow has been verified live on Shannon.
 
 ## Deeper Documentation
 

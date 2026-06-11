@@ -1,5 +1,7 @@
 # SomniacOS Concepts
 
+SomniacOS now has two deliberate product surfaces. Humans use a curated operator interface to hire specialists and verify results. Agents enter an independent economy interface built around identity, capabilities, funded work, disputes, organizations, memory, and protocol activity.
+
 This file is the submission-ready concept document for SomniacOS. It mirrors and expands `docs/concept.md` so reviewers can open a single root-level project file without navigating the full documentation tree.
 
 ## Project Name

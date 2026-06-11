@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createPublicClient, custom, formatEther, http, type Address, type EIP1193Provider } from "viem";
+import { createPublicClient, custom, formatEther, type Address, type EIP1193Provider } from "viem";
 import { RefreshCw, WalletCards, Zap } from "lucide-react";
-import { somnia } from "../lib/contracts";
+import { somnia, somniaTransport } from "../lib/contracts";
+import { normalizeAppError } from "../lib/app-error";
 
 declare global {
   interface Window {
@@ -28,18 +29,22 @@ export function useSomniaWallet() {
       return;
     }
 
-    const accounts = await ethereum.request({ method: "eth_accounts" }) as Address[];
-    const selected = address ?? accounts[0];
-    const chain = await ethereum.request({ method: "eth_chainId" }) as string;
+    try {
+      const accounts = await ethereum.request({ method: "eth_accounts" }) as Address[];
+      const selected = address ?? accounts[0];
+      const chain = await ethereum.request({ method: "eth_chainId" }) as string;
 
-    if (!selected) {
-      setWallet({ chainId: Number.parseInt(chain, 16) });
-      return;
+      if (!selected) {
+        setWallet({ chainId: Number.parseInt(chain, 16) });
+        return;
+      }
+
+      const client = createPublicClient({ chain: somnia, transport: somniaTransport() });
+      const balance = await client.getBalance({ address: selected });
+      setWallet({ address: selected, chainId: Number.parseInt(chain, 16), balance: formatEther(balance) });
+    } catch (error) {
+      setWallet((current) => ({ ...current, error: normalizeAppError(error).message }));
     }
-
-    const client = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
-    const balance = await client.getBalance({ address: selected });
-    setWallet({ address: selected, chainId: Number.parseInt(chain, 16), balance: formatEther(balance) });
   }
 
   async function connect() {
@@ -63,7 +68,9 @@ export function useSomniaWallet() {
         method: "wallet_switchEthereumChain",
         params: [{ chainId: `0x${somnia.id.toString(16)}` }]
       });
-    } catch {
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error ? Number((error as { code: unknown }).code) : undefined;
+      if (code !== 4902) throw error;
       await ethereum.request({
         method: "wallet_addEthereumChain",
         params: [{
@@ -103,28 +110,63 @@ export function WalletButton() {
   const { wallet, connect, switchToSomnia, refresh } = useSomniaWallet();
   const wrongNetwork = wallet.chainId && wallet.chainId !== somnia.id;
   const [refreshing, setRefreshing] = useState(false);
+  const [actionError, setActionError] = useState("");
+
+  async function handleConnect() {
+    setActionError("");
+    try {
+      await connect();
+    } catch (error) {
+      const normalized = normalizeAppError(error);
+      setActionError(`${normalized.message} ${normalized.action}`);
+    }
+  }
+
+  async function handleSwitch() {
+    setActionError("");
+    try {
+      await switchToSomnia();
+      await refresh(wallet.address);
+    } catch (error) {
+      const normalized = normalizeAppError(error);
+      setActionError(`${normalized.message} ${normalized.action}`);
+    }
+  }
 
   if (!wallet.address) {
     return (
-      <button onClick={connect} className="inline-flex items-center gap-2 rounded-lg bg-signal px-3 py-2 text-sm font-semibold text-black">
-        <WalletCards className="h-4 w-4" />
-        Connect wallet
-      </button>
+      <div className="flex flex-col items-end gap-1">
+        <button onClick={handleConnect} className="inline-flex whitespace-nowrap items-center gap-2 rounded-lg bg-signal px-3 py-2 text-sm font-semibold text-black">
+          <WalletCards className="h-4 w-4" />
+          Connect wallet
+        </button>
+        {actionError ? <p role="alert" className="max-w-64 text-right text-[11px] text-red-300">{actionError}</p> : null}
+      </div>
     );
   }
 
   if (wrongNetwork) {
     return (
-      <button onClick={switchToSomnia} className="inline-flex items-center gap-2 rounded-lg border border-danger/50 bg-danger/15 px-3 py-2 text-sm font-semibold text-danger">
-        <Zap className="h-4 w-4" />
-        Wrong network — switch to Somnia
-      </button>
+      <div className="flex flex-col items-end gap-1">
+        <button onClick={handleSwitch} className="inline-flex whitespace-nowrap items-center gap-2 rounded-lg border border-danger/50 bg-danger/15 px-3 py-2 text-sm font-semibold text-danger">
+          <Zap className="h-4 w-4" />
+          Wrong network — switch to Somnia
+        </button>
+        {actionError ? <p role="alert" className="max-w-64 text-right text-[11px] text-red-300">{actionError}</p> : null}
+      </div>
     );
   }
 
   async function handleRefresh() {
     setRefreshing(true);
-    try { await refresh(wallet.address); } finally { setRefreshing(false); }
+    try {
+      await refresh(wallet.address);
+    } catch (error) {
+      const normalized = normalizeAppError(error);
+      setActionError(`${normalized.message} ${normalized.action}`);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   return (

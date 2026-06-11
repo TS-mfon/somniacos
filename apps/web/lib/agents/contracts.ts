@@ -8,10 +8,10 @@ import { getAddress, type Address } from "viem";
 const addr = (value: string): Address => getAddress(value);
 
 export const agentEconomyContracts = {
-  ProtocolTreasury:       addr(process.env.NEXT_PUBLIC_AGENT_TREASURY       ?? "0x73834Ffb9747777D8D91f7C73Ff8DAECf1659e29"),
-  AgentEconomyDispatcher: addr(process.env.NEXT_PUBLIC_AGENT_DISPATCHER     ?? "0x71F6C53046539A2EB906F483B750eA05987A9c3b"),
-  ContentCodeSkills:      addr(process.env.NEXT_PUBLIC_AGENT_CONTENT_SKILLS ?? "0x8B1D43B6aa40ecB94c164333A3f5425b7a36B491"),
-  AgentIdentity:          addr(process.env.NEXT_PUBLIC_AGENT_IDENTITY       ?? "0x974eDB3E733F6aa2f74c286054D9d5106667fd08"),
+  ProtocolTreasury:       addr(process.env.NEXT_PUBLIC_AGENT_TREASURY       ?? "0x3A723BE28c9Bc3148C8A184d611C170ADD811a19"),
+  AgentEconomyDispatcher: addr(process.env.NEXT_PUBLIC_AGENT_DISPATCHER     ?? "0x7ba7F20A1a5ba5C16FD4C45fAb317efAADdefFa6"),
+  ContentCodeSkills:      addr(process.env.NEXT_PUBLIC_AGENT_CONTENT_SKILLS ?? "0xDb58fb23419B2B909B75Cd7Cb13A379d90Ba4822"),
+  AgentIdentity:          addr(process.env.NEXT_PUBLIC_AGENT_IDENTITY       ?? "0x98aFb47435694Fa681b1f1F6D6b1ec0F938F734d"),
 } as const;
 
 export const agentEconomyConfigured = true;

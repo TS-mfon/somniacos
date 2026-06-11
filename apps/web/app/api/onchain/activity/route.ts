@@ -1,4 +1,5 @@
 import { getOnchainActivity, publicClient } from "../../../../lib/server-onchain";
+import { appErrorResponse } from "../../../../lib/app-error";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,6 @@ export async function GET() {
       activity
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown onchain read error";
-    return Response.json({ ok: false, error: message, activity: [] }, { status: 500 });
+    return appErrorResponse(error);
   }
 }

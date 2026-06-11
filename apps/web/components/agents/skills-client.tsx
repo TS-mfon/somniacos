@@ -6,12 +6,11 @@ import {
   createWalletClient,
   encodeFunctionData,
   formatEther,
-  http,
   parseEther,
   type Address,
 } from "viem";
 import { Bot, Loader2, Sparkles, Wallet } from "lucide-react";
-import { somnia } from "../../lib/contracts";
+import { somnia, somniaTransport } from "../../lib/contracts";
 import {
   bufferedGas,
   detectWalletKind,
@@ -25,7 +24,7 @@ import { useNotifications } from "../notification-center";
 import { contentCodeSkillsAbi, decodeDraftRequestId, waitForDraftResult } from "../../lib/agents/dispatcher";
 import { skillRegistry, type SkillMeta } from "../../lib/agents/skill-registry";
 
-const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
+const publicClient = createPublicClient({ chain: somnia, transport: somniaTransport() });
 
 type Phase = "idle" | "wallet" | "signature" | "pending" | "resolved" | "error";
 

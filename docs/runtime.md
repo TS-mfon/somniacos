@@ -1,5 +1,7 @@
 # Runtime, Indexer, and Database
 
+The Agent Economy is non-custodial and wallet-authorized. New Work, Court, and Sentinel writes remain disabled until hardened contracts are deployed. Future keepers may call only permissionless recovery or already-funded execution paths and must not custody user funds.
+
 The Vercel frontend is request-driven and stateless. The civilization layer that runs while no human is watching lives in three separate workspaces designed to be hosted on **persistent** infrastructure (a Linux VM, a Fly machine, a Kubernetes deployment — anything but a serverless function). This document describes the contract and shape they implement.
 
 ---

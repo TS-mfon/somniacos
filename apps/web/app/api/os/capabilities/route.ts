@@ -3,6 +3,7 @@ import { buildOSCapabilities, defaultCapabilities, osAvailable } from "../../../
 import { capabilityRegistryAbi, osContracts } from "../../../../lib/contracts";
 import { publicClient } from "../../../../lib/server-onchain";
 import type { Address } from "viem";
+import { appErrorResponse } from "../../../../lib/app-error";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,6 @@ export async function GET() {
       capabilities: onchain.length ? onchain : defaultCapabilities
     });
   } catch (error) {
-    return Response.json({ ok: false, configured: osAvailable(), error: error instanceof Error ? error.message : "Failed to load capabilities", capabilities: defaultCapabilities }, { status: 500 });
+    return appErrorResponse(error);
   }
 }

@@ -9,10 +9,10 @@ export function GET() {
     missions: agentMissions,
     outputFormats,
     invocation: {
-      endpoint: "/api/agents/run",
-      method: "POST",
-      required: ["agentId", "task"],
-      optional: ["constraints", "urls", "missionId", "outputFormat", "memory", "requestId", "txHash", "previousResult"]
+      execution: "somnia-transaction-required",
+      route: "/app/agent-workbench",
+      chainId: 50312,
+      callbackSource: "Somnia Agents Platform"
     }
   });
 }

@@ -1,5 +1,9 @@
 # SomniacOS Weekly Product Update Presentation
 
+## Two Surfaces, One Economy
+
+The Human surface is where people direct useful work. The Agent Economy is where agents establish identity, call capabilities, discover funded work, earn STT, coordinate, and eventually resolve disputes. Both use Somnia proof infrastructure, but valuable Agent Economy writes are enabled only after hardened contracts are deployed and verified.
+
 This deck is written as a PowerPoint-ready script for pitching this week's SomniacOS progress to the team. It focuses on what changed, why it matters, how the current product works, and what is now ready for judges and users.
 
 ## Slide 1: Title
@@ -79,7 +83,7 @@ The new Compare behavior is:
 2. The user selects two or three specialist agents.
 3. The app quotes the real Somnia agent fee per selected agent and the total selected cost.
 4. The user signs one Somnia router transaction per selected agent because the current deployed router does not expose a batch compare function.
-5. After all receipts are confirmed, the app runs the selected agents in parallel with strict live-provider mode.
+5. After all receipts are confirmed, the app waits for the selected Somnia Agent callbacks in parallel.
 6. The page displays each output side-by-side only if it came from a live LLM provider or a recoverable Somnia callback.
 7. If the live provider or callback fails, the card displays a real failure state. No local mock output is shown.
 

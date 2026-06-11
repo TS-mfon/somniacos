@@ -1,5 +1,7 @@
 # SomniacOS Contracts Reference
 
+`AgentEconomyDispatcherV2` and `AgentIdentityV2` are implemented and tested but not yet deployed. They add exact deposits, delete-before-resolve callbacks, standardized failures, authorized identity hooks, timeout recovery, and pull-payment refunds. Phase 1 remains authoritative for live identity and Drafter calls until the canonical deployment registry is updated.
+
 All contracts are deployed on **Somnia Shannon Testnet** (chain id `50312`, RPC `https://dream-rpc.somnia.network/`, explorer `https://shannon-explorer.somnia.network`). Solidity `^0.8.24`. Foundry profile: `optimizer = true`, `optimizer_runs = 200`, `via_ir = true`. Source under `packages/contracts/src/`. Tests under `packages/contracts/test/`.
 
 This document is the authoritative API reference for every public function, event, and invariant. ABIs mirrored in `apps/web/lib/contracts.ts`.

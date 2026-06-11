@@ -1,9 +1,9 @@
-import { createPublicClient, decodeEventLog, formatEther, http, type Abi, type Address, type Hash, type TransactionReceipt } from "viem";
-import { fullContractCatalog, somnia } from "./contracts";
+import { createPublicClient, decodeEventLog, formatEther, type Abi, type Address, type Hash, type TransactionReceipt } from "viem";
+import { fullContractCatalog, somnia, somniaTransport } from "./contracts";
 
 export const publicClient = createPublicClient({
   chain: somnia,
-  transport: http(somnia.rpcUrls.default.http[0])
+  transport: somniaTransport()
 });
 
 const eventLabels: Record<string, string> = {
@@ -105,7 +105,22 @@ function valueFromArgs(eventName: string, args: Record<string, unknown>) {
   return undefined;
 }
 
+let activityCache: { expiresAt: number; value: Awaited<ReturnType<typeof loadOnchainActivity>> } | null = null;
+let activityRequest: Promise<Awaited<ReturnType<typeof loadOnchainActivity>>> | null = null;
+
 export async function getOnchainActivity() {
+  if (activityCache && activityCache.expiresAt > Date.now()) return activityCache.value;
+  if (activityRequest) return activityRequest;
+  activityRequest = loadOnchainActivity().then((value) => {
+    activityCache = { expiresAt: Date.now() + 10_000, value };
+    return value;
+  }).finally(() => {
+    activityRequest = null;
+  });
+  return activityRequest;
+}
+
+async function loadOnchainActivity() {
   const latest = await publicClient.getBlockNumber();
   // Somnia Shannon currently limits eth_getLogs ranges to 1000 blocks.
   const fromBlock = latest > 950n ? latest - 950n : 0n;
@@ -114,7 +129,7 @@ export async function getOnchainActivity() {
     const logs = await publicClient.getLogs({
       address: contract.address as Address,
       fromBlock,
-      toBlock: "latest"
+      toBlock: latest
     });
 
     return decodeLogs(logs);

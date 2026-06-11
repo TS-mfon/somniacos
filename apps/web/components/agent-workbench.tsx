@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, formatUnits, getAbiItem, http, isAddress, keccak256, parseEther, parseUnits, toEventSelector, toHex, type Address, type Hash } from "viem";
+import { createPublicClient, createWalletClient, decodeEventLog, encodeFunctionData, formatEther, formatUnits, getAbiItem, isAddress, keccak256, parseEther, parseUnits, toEventSelector, toHex, type Address, type Hash } from "viem";
 import { AlertTriangle, Brain, CheckCircle2, Clock3, Copy, ExternalLink, GitBranch, Loader2, RadioTower, Sparkles, X } from "lucide-react";
 import { useOnchainActivity } from "./live-economy";
 import { useSomniaWallet } from "./wallet-button";
-import { contracts, extensionContracts, osContracts, osKernelConfigured, osKernelEnabled, protocolFeeVaultAbi, somnia, somniacAgentRouterAbi, somniacAgentRouterV2Abi, somniacTokenFactoryAbi } from "../lib/contracts";
+import { contracts, extensionContracts, osContracts, osKernelConfigured, osKernelEnabled, protocolFeeVaultAbi, somnia, somniaTransport, somniacAgentRouterAbi, somniacAgentRouterV2Abi, somniacTokenFactoryAbi } from "../lib/contracts";
 import {
   agentMissions,
   buildAgentHandoffs,
@@ -29,8 +29,9 @@ import { clearRunHistory, loadRunHistory, removeRunHistory, upsertMissionReceipt
 import { bufferedGas, detectWalletKind, estimateGasFees, gasCeiling, PendingTxError, pickPricingForWallet, pricingArgs, type WalletKind } from "../lib/somnia-gas";
 import { useNotifications } from "./notification-center";
 import { summarizeError } from "../lib/onchain-state";
+import { normalizeAppError } from "../lib/app-error";
 
-const publicClient = createPublicClient({ chain: somnia, transport: http(somnia.rpcUrls.default.http[0]) });
+const publicClient = createPublicClient({ chain: somnia, transport: somniaTransport() });
 
 const V1_AGENT_RUN_REQUESTED_TOPIC = toEventSelector(getAbiItem({ abi: somniacAgentRouterAbi, name: "AgentRunRequested" })) as `0x${string}`;
 const V2_OS_AGENT_RUN_REQUESTED_TOPIC = toEventSelector(getAbiItem({ abi: somniacAgentRouterV2Abi, name: "OSAgentRunRequested" })) as `0x${string}`;
@@ -375,9 +376,14 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
           }
         }
         setLocalRuns(merged);
-        window.alert(`Imported ${incoming.length} run${incoming.length === 1 ? "" : "s"}.`);
+        notify.push({
+          kind: "info",
+          title: "History imported",
+          body: `Imported ${incoming.length} run${incoming.length === 1 ? "" : "s"}.`
+        });
       } catch (error) {
-        window.alert(`Import failed: ${error instanceof Error ? error.message : "invalid file"}`);
+        const normalized = normalizeAppError(error);
+        notify.push({ kind: "error", title: normalized.message, body: normalized.action });
       }
     };
     reader.readAsText(file);
@@ -718,7 +724,13 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
     const raw = typeof window !== "undefined" ? window.prompt("Paste the transaction hash from your wallet (0x...):") : "";
     const hash = raw?.trim();
     if (!hash || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
-      if (hash) window.alert("That does not look like a valid 0x... transaction hash.");
+      if (hash) {
+        notify.push({
+          kind: "error",
+          title: "Invalid transaction hash",
+          body: "Use the complete 0x-prefixed, 66-character hash from your wallet or the Somnia explorer."
+        });
+      }
       return;
     }
     try {
@@ -1263,7 +1275,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
               <button onClick={() => void switchToSomnia()} className="mt-2 inline-flex items-center gap-2 rounded-xl border border-danger/50 px-3 py-1.5 font-semibold text-danger hover:bg-danger/15">Switch to Somnia Shannon</button>
             </div>
           ) : null}
-          {walletKind === "rabby" || walletKind === "unknown" ? (
+          {wallet.address && (walletKind === "rabby" || walletKind === "unknown") ? (
             <div className="rounded-2xl border border-danger/45 bg-danger/10 p-4 text-xs leading-5 text-danger">
               <span className="font-mono uppercase tracking-[0.2em]">{walletKind === "rabby" ? "Rabby detected" : "Unknown wallet"}</span>
               <p className="mt-2 text-white/80">
@@ -1271,15 +1283,15 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
                 We&apos;re submitting a <strong className="text-danger">legacy gas price</strong> so the wallet can&apos;t silently downgrade it. <strong className="text-danger">Do NOT lower gas in Advanced.</strong> If you do, you still pay the 0.1 STT fee and have to Speed Up.
               </p>
             </div>
-          ) : (
+          ) : wallet.address ? (
             <div className="rounded-2xl border border-ember/40 bg-ember/10 p-4 text-xs leading-5 text-ember">
               <span className="font-mono uppercase tracking-[0.2em]">Heads up</span>
               <p className="mt-2 text-white/75">Your wallet will open. <strong className="text-ember">Keep the suggested gas as‑is — do NOT lower it in Advanced.</strong> Lowering gas stalls the Somnia request. You would still pay the 0.1 STT protocol fee and have to use your wallet&apos;s Speed Up button to recover the request.</p>
             </div>
-          )}
+          ) : null}
           <button onClick={runAgent} disabled={isRunning} className="inline-flex items-center justify-center gap-2 rounded-xl bg-signal px-5 py-3 font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60">
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RadioTower className="h-4 w-4" />}
-            {runButtonCopy(tx.phase, missionMode)}
+            {!wallet.address && tx.phase === "idle" ? (missionMode ? "Connect wallet & run mission" : "Connect wallet & run agent") : runButtonCopy(tx.phase, missionMode)}
           </button>
         </div>
       </section>
@@ -1366,7 +1378,7 @@ export function AgentWorkbench({ mode: surface = "workbench" }: { mode?: "workbe
         <section className="panel mt-6 rounded-[1.5rem] p-6 text-sm text-white/60">
           <p className="font-mono text-xs uppercase tracking-[0.24em] text-signal">Anchored results</p>
           <h3 className="mt-3 text-2xl font-semibold text-white">No agent results yet</h3>
-          <p className="mt-2 text-white/55">Pick a specialist above, click Run agent, and your result will appear here within a couple of seconds.</p>
+          <p className="mt-2 text-white/55">Pick a specialist above, click Run agent, and your result will appear here after the Somnia callback resolves.</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button onClick={importByTxHash} className="rounded-xl border border-signal/40 bg-signal/10 px-3 py-1.5 text-xs font-semibold text-signal hover:bg-signal/20">Recover by tx hash</button>
           </div>
@@ -1752,19 +1764,7 @@ function normalizeTokenForm(form: TokenLaunchForm, fallbackOwner: Address) {
 }
 
 function recommendedAction(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  if (message.includes("no injected wallet") || message.includes("ethereum")) return "Install or unlock MetaMask, Rabby, Brave Wallet, or Coinbase Wallet, then connect again.";
-  if (message.includes("rejected") || message.includes("denied") || message.includes("user rejected")) return "Nothing was submitted. Click the button again and approve the wallet prompt.";
-  if (message.includes("stuck in mempool")) return "Open your wallet's pending tab, tap Speed Up on the pending tx. The app will recover the request automatically — do NOT resubmit.";
-  if (message.includes("underpriced") || message.includes("intrinsic gas") || message.includes("gas required")) return "Accept the suggested gas in your wallet. Lowering gas is what causes this — do not change the prefilled values.";
-  if (message.includes("nonce too low")) return "A previous tx is still pending. Speed Up or Cancel it in your wallet, then retry.";
-  if (message.includes("insufficient") || message.includes("underfunded") || message.includes("funds")) return "Add STT on Somnia Shannon for the agent fee plus gas, refresh your balance, then retry.";
-  if (message.includes("gas") || message.includes("estimate")) return "Switch away from Somnia and back in your wallet, then retry. The app will re-check the network before opening the wallet.";
-  if (message.includes("chain") || message.includes("network")) return "Approve the Somnia Shannon network switch in your wallet. If blocked, switch networks manually and retry.";
-  if (message.includes("timeout") || message.includes("callback")) return "The transaction may still be valid. Check History or retry after the pending request is recovered.";
-  if (message.includes("url")) return "Use a full http(s) URL or remove the URL to run with LLM inference.";
-  if (message.includes("token")) return "Review token name, symbol, decimals, supply, and owner address, then retry.";
-  return "Review the message above, then retry when corrected.";
+  return normalizeAppError(error).action;
 }
 
 function ResultModal({ run, onClose }: { run: AgentRunRecord; onClose: () => void }) {
@@ -1995,4 +1995,3 @@ async function waitForRun(
   }
   return { timedOut: true, lastInterim };
 }
-
